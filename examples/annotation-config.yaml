@@ -1,0 +1,124 @@
+# Example Company-Specific Annotation Configuration
+# This file demonstrates how to configure annotation rules for your organization
+
+# Required annotations that must be present on all resources
+required_annotations:
+  - cost-center
+  - team
+  - environment
+
+# Forbidden annotations that should not be used
+forbidden_annotations:
+  - deprecated
+  - temp
+  - test
+
+# Annotation patterns - enforce specific formats using regex
+annotation_patterns:
+  cost-center: "^CC-[0-9]{4}$"  # Format: CC-1234
+  team: "^(platform|backend|frontend|data|security|devops)$"
+  environment: "^(production|staging|development|qa)$"
+  owner: "^[a-zA-Z0-9._%+-]+@company\\.com$"  # Company email
+  ticket: "^(JIRA|GH)-[0-9]+$"  # JIRA-123 or GH-456
+
+# Custom rules for more complex validation
+rules:
+  - name: "production-requirements"
+    description: "Production resources must have owner and on-call annotations"
+    logic: "and"
+    action: "require"
+    filters:
+      - key: "environment"
+        operator: "equals"
+        value: "production"
+    metadata:
+      required_annotations:
+        - owner
+        - on-call-team
+        - runbook-url
+
+  - name: "cost-tracking"
+    description: "Resources with high-cost tag must have budget approval"
+    logic: "and"
+    action: "require"
+    filters:
+      - key: "resource-tier"
+        operator: "in"
+        value: ["expensive", "critical", "high-cost"]
+    metadata:
+      required_annotations:
+        - budget-approved-by
+        - budget-approval-date
+
+  - name: "deprecated-warning"
+    description: "Warn about resources using old annotation format"
+    logic: "or"
+    action: "warn"
+    filters:
+      - key: "app-name"
+        operator: "exists"
+      - key: "service-name"
+        operator: "exists"
+    metadata:
+      message: "Please migrate to 'app' annotation instead of 'app-name' or 'service-name'"
+
+  - name: "exclude-test-resources"
+    description: "Exclude resources marked as test from production scans"
+    logic: "or"
+    action: "exclude"
+    filters:
+      - key: "temporary"
+        operator: "equals"
+        value: "true"
+      - key: "lifecycle"
+        operator: "equals"
+        value: "test"
+      - key: "environment"
+        operator: "contains"
+        value: "test"
+
+  - name: "compliance-check"
+    description: "Ensure compliance annotations for regulated workloads"
+    logic: "and"
+    action: "require"
+    filters:
+      - key: "compliance-required"
+        operator: "equals"
+        value: "true"
+    metadata:
+      required_annotations:
+        - data-classification
+        - retention-policy
+        - encryption-enabled
+        - audit-log-enabled
+
+  - name: "multi-tenant-isolation"
+    description: "Ensure tenant isolation annotations"
+    logic: "and"
+    action: "require"
+    filters:
+      - key: "multi-tenant"
+        operator: "equals"
+        value: "true"
+    metadata:
+      required_annotations:
+        - tenant-id
+        - isolation-level
+        - network-policy
+
+# Annotation organization priorities
+# Used when organizing by annotation without specifying a key
+organization_priorities:
+  - environment
+  - team
+  - cost-center
+  - project
+  - application
+  - component
+  - version
+
+# Default values for missing annotations (optional)
+annotation_defaults:
+  environment: "development"
+  cost-center: "CC-0000"
+  team: "unassigned"
