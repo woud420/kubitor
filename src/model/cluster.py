@@ -32,7 +32,7 @@ class ClusterInfo(BaseModel):
 
     server_version: Optional[ClusterVersion] = None
     client_version: Optional[ClusterVersion] = None
-    nodes: List[NodeInfo] = []
+    nodes: List[NodeInfo] = Field(default_factory=list)
 
 
 class UpgradeSuggestion(BaseModel):
@@ -40,7 +40,7 @@ class UpgradeSuggestion(BaseModel):
 
     current_version: str
     suggested_next_version: str
-    upgrade_notes: List[str] = []
-    api_deprecations: List[str] = []
-    required_actions: List[str] = []
-    general_recommendations: List[str] = []
+    upgrade_notes: List[str] = Field(default_factory=list)
+    api_deprecations: List[str] = Field(default_factory=list)
+    required_actions: List[str] = Field(default_factory=list)
+    general_recommendations: List[str] = Field(default_factory=list)
