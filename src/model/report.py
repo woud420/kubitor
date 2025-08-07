@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, List, Optional
-from pydantic import BaseModel
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 from .cluster import ClusterInfo, UpgradeSuggestion
 
@@ -38,8 +39,8 @@ class ResourceSummary(BaseModel):
     """Resource statistics summary."""
 
     total_resources: int = 0
-    by_namespace: Dict[str, int] = {}
-    by_type: Dict[str, int] = {}
+    by_namespace: Dict[str, int] = Field(default_factory=dict)
+    by_type: Dict[str, int] = Field(default_factory=dict)
     helm_managed: int = 0
     non_helm_managed: int = 0
 
@@ -49,7 +50,7 @@ class ClusterReport(BaseModel):
 
     timestamp: datetime
     cluster_info: ClusterInfo
-    helm_releases: List[HelmRelease] = []
-    helm_repositories: List[HelmRepository] = []
+    helm_releases: List[HelmRelease] = Field(default_factory=list)
+    helm_repositories: List[HelmRepository] = Field(default_factory=list)
     resources: ResourceSummary
     upgrade_suggestions: Optional[UpgradeSuggestion] = None
