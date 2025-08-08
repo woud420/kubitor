@@ -407,8 +407,8 @@ def upgrade_path(
         raise typer.Exit(1)
 
 
-@app.command()
-def drift(
+@app.command("iac-drift")
+def iac_drift(
     iac_path: str = typer.Argument(..., help="Path to IaC directory"),
     cluster_path: str = typer.Argument(
         "./k8s-resources", help="Path to cluster export directory (default: ./k8s-resources)"

@@ -86,10 +86,10 @@ report:
 	$(BIN)/python -m src.main report $(ARGS)
 
 upgrade-path:
-	$(BIN)/python -m src.main upgrade-path $(ARGS)
+        $(BIN)/python -m src.main upgrade-path $(ARGS)
 
-drift:
-	$(BIN)/python -m src.main drift $(ARGS)
+iac-drift:
+        $(BIN)/python -m src.main iac-drift $(ARGS)
 
 # Historical tracking commands
 history:

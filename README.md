@@ -78,13 +78,13 @@ make upgrade-path ARGS="v1.25.0"
 make upgrade-path ARGS="v1.25.0 v1.30.0"
 ```
 
-### 4. Drift Analysis - Compare IaC with running cluster
+### 4. IaC Drift Analysis - Compare IaC with running cluster
 ```bash
 # Compare IaC with cluster state
-make drift ARGS="/path/to/iac ./k8s-resources"
+make iac-drift ARGS="/path/to/iac ./k8s-resources"
 
 # Hide EKS system resources for cleaner output
-make drift ARGS="/path/to/iac ./k8s-resources --hide-system"
+make iac-drift ARGS="/path/to/iac ./k8s-resources --hide-system"
 ```
 
 ### 5. Historical Commands - Track Changes Over Time
@@ -233,13 +233,13 @@ make upgrade-path ARGS="v1.25.0"
 make upgrade-path ARGS="v1.25.0 v1.34.0"
 ```
 
-#### Drift Analysis
+#### IaC Drift Analysis
 ```bash
 # Compare IaC with cluster reality
-make drift ARGS="~/workspace/syntin/infra/k8s ./k8s-resources"
+make iac-drift ARGS="~/workspace/syntin/infra/k8s ./k8s-resources"
 
 # Focus on app drift, hide system resources
-make drift ARGS="~/workspace/syntin/infra/k8s ./k8s-resources --hide-system"
+make iac-drift ARGS="~/workspace/syntin/infra/k8s ./k8s-resources --hide-system"
 ```
 
 #### Historical Tracking
