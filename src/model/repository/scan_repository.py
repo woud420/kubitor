@@ -1,11 +1,11 @@
 """Repository for scan-related business operations."""
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from ..dao.scan_dao import ScanDAO
 from ...database.connection import DatabaseConnection
 from ...utils.logger import get_logger
+from ..dao.scan_dao import ScanDAO
 
 logger = get_logger(__name__)
 
@@ -141,7 +141,7 @@ class ScanRepository:
             # Parse string timestamp if needed
             try:
                 timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-            except:
+            except Exception:
                 return None
 
         age = datetime.utcnow() - timestamp.replace(tzinfo=None)

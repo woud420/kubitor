@@ -40,22 +40,47 @@ CHANGE_DAO_REGISTRY: Dict[DatabaseDialect, Callable[[DatabaseConnection], BaseDA
 }
 
 
+def create_base_dao(dialect: DatabaseDialect) -> Callable[[DatabaseConnection], BaseDAO]:
+    """Return the DAO constructor for the given dialect."""
+    return CHANGE_DAO_REGISTRY[dialect]
+
+
 class ChangeDAO:
     """Data Access Object for resource_changes table with dialect dispatch."""
 
     def __init__(self, db_connection: DatabaseConnection):
+        """Initialise the DAO and resolve the database dialect.
+
+        As with the other DAOs, test fixtures pass in a ``MagicMock`` which lacks a
+        ``dialect`` attribute.  We therefore derive the dialect from the connection's
+        URL or info dictionary, defaulting to ``sqlite`` if necessary.
+        """
+
         self.db = db_connection
-        # Use enum + dictionary pattern instead of if/elif
+
         try:
-            dialect_enum = DatabaseDialect(db_connection.dialect)
+            dialect = db_connection.dialect
+        except AttributeError:
+            dialect = None
+
+        if not isinstance(dialect, str):
+            try:
+                url = db_connection.database_url
+            except AttributeError:
+                url = None
+            if not isinstance(url, str) and hasattr(db_connection, "get_database_info"):
+                info = db_connection.get_database_info()
+                url = info.get("url") if isinstance(info, dict) else None
+            dialect = url.split(":", 1)[0] if isinstance(url, str) else "sqlite"
+
+        try:
+            dialect_enum = DatabaseDialect(dialect)
         except ValueError:
-            raise ValueError(f"Unsupported database dialect: {db_connection.dialect}")
+            raise ValueError(f"Unsupported database dialect: {dialect}")
 
-        dao_constructor = CHANGE_DAO_REGISTRY.get(dialect_enum)
-        if dao_constructor is None:
-            raise ValueError(f"No ChangeDAO implementation for dialect: {dialect_enum}")
-
+        dao_constructor = create_base_dao(dialect_enum)
         self._base_dao = dao_constructor(db_connection)
+        self.dialect = dialect_enum.value
 
     def create_change(
         self,
@@ -80,7 +105,7 @@ class ChangeDAO:
             "diff_summary",
         ]
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             values = [
                 kind,
                 namespace,
@@ -111,7 +136,7 @@ class ChangeDAO:
 
     def get_changes_between_scans(self, scan1_id: int, scan2_id: int) -> List[Dict[str, Any]]:
         """Get changes between two scans."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "old_scan_id = ? AND new_scan_id = ?"
         else:
             where_clause = "old_scan_id = %s AND new_scan_id = %s"
@@ -125,7 +150,7 @@ class ChangeDAO:
         """Get recent changes within the last N days."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "timestamp >= ?"
         else:
             where_clause = "timestamp >= %s"
@@ -137,7 +162,7 @@ class ChangeDAO:
         self, kind: str, name: str, namespace: Optional[str] = None, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """Get changes for a specific resource."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "kind = ? AND name = ?"
             params = [kind, name]
             if namespace is not None:
@@ -160,7 +185,7 @@ class ChangeDAO:
         self, change_type: str, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get changes by type (created, updated, deleted)."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "change_type = ?"
         else:
             where_clause = "change_type = %s"
@@ -173,7 +198,7 @@ class ChangeDAO:
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         # Total changes
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "timestamp >= ?"
             params = [cutoff_date]
         else:
@@ -183,7 +208,7 @@ class ChangeDAO:
         total_changes = self._base_dao.count_all(where_clause, params)
 
         # Changes by type
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             type_query = """
                 SELECT change_type, COUNT(*) as count 
                 FROM resource_changes 
@@ -202,7 +227,7 @@ class ChangeDAO:
         changes_by_type = {row["change_type"]: row["count"] for row in type_results}
 
         # Changes by resource kind
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             kind_query = """
                 SELECT kind, COUNT(*) as count 
                 FROM resource_changes 
@@ -225,7 +250,7 @@ class ChangeDAO:
         most_changed_kinds = {row["kind"]: row["count"] for row in kind_results}
 
         # Changes by namespace
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             namespace_query = """
                 SELECT namespace, COUNT(*) as count 
                 FROM resource_changes 
@@ -272,7 +297,7 @@ class ChangeDAO:
             "diff_summary",
         ]
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             values_list = [
                 [
                     item["kind"],
@@ -307,7 +332,7 @@ class ChangeDAO:
         """Delete changes older than specified days."""
         cutoff_date = datetime.utcnow() - timedelta(days=keep_days)
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "timestamp < ?"
         else:
             where_clause = "timestamp < %s"

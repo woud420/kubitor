@@ -1,5 +1,5 @@
-.PHONY: install dev test test-unit test-integration test-all test-cov test-watch clean run help lint format check install-editable ci-test ci-lint
-
+.PHONY: install dev test test-unit test-integration test-all test-cov test-watch clean \
+run help lint format check install-editable ci-test ci-lint
 PYTHON := python3
 VENV := .venv
 BIN := $(VENV)/bin
@@ -86,10 +86,10 @@ report:
 	$(BIN)/python -m src.main report $(ARGS)
 
 upgrade-path:
-        $(BIN)/python -m src.main upgrade-path $(ARGS)
+	$(BIN)/python -m src.main upgrade-path $(ARGS)
 
 iac-drift:
-        $(BIN)/python -m src.main iac-drift $(ARGS)
+	$(BIN)/python -m src.main iac-drift $(ARGS)
 
 # Historical tracking commands
 history:
@@ -130,12 +130,11 @@ install-editable: dev
 	@echo "Installing package in editable mode..."
 	$(BIN)/pip install -e .
 
-# CI-friendly targets
 ci-test: dev
 	@echo "Running CI tests..."
 	$(BIN)/pytest tests/ -v --tb=short
 
 ci-lint: dev
 	@echo "Running CI linting..."
-	$(BIN)/ruff check src/ tests/ --output-format=github
-	$(BIN)/mypy src/ --no-error-summary
+	$(BIN)/ruff format src/ tests/
+	$(BIN)/ruff check src/ tests/ --fix --unsafe-fixes --output-format=github

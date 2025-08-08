@@ -128,7 +128,9 @@ class ScanService:
         logger.info(f"Retrieving scan history for context: {context}, namespace: {namespace}")
 
         # Use the actual repository interface
-        return self.scan_repo.get_recent_scans(limit=limit, cluster_context=context)
+        return self.scan_repo.get_recent_scans(
+            cluster_context=context, namespace=namespace, days=days, limit=limit
+        )
 
     def get_scan_details(self, scan_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed information about a specific scan."""
