@@ -1,12 +1,11 @@
 """Async database connection using databases library."""
 
 import asyncio
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
 from contextlib import asynccontextmanager
 from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
-import databases
 from databases import Database
 
 from ..utils.logger import get_logger
@@ -308,7 +307,7 @@ class AsyncDatabaseConnection:
             try:
                 result = await self.database.fetch_one(f"SELECT COUNT(*) as count FROM {table}")
                 stats[table] = result["count"] if result else 0
-            except:
+            except Exception:
                 stats[table] = 0
 
         return stats

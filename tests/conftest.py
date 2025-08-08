@@ -1,13 +1,14 @@
 """Test configuration and fixtures."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from src.database.connection import AsyncDatabaseConnection, DatabaseConnection
 
 pytest_plugins = ("pytest_asyncio",)
-
-from src.database.connection import DatabaseConnection, AsyncDatabaseConnection
 
 
 @pytest.fixture

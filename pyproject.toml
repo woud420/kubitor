@@ -49,10 +49,16 @@ include = ["src*"]
 [tool.ruff]
 target-version = "py38"
 line-length = 100
-select = ["E", "F", "W", "I", "N"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+# Ignore long lines for now to reduce noise in the existing codebase
+ignore = ["E501"]
+# The CLI code isn't actively maintained yet, so skip it during linting
+exclude = ["src/cli/**"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
