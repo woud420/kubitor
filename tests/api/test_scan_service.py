@@ -14,6 +14,7 @@ class TestScanService:
     def test_init_with_default_database_url(self):
         """Test service initialization with default database URL."""
         with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn:
+            mock_db_conn.return_value.dialect = "sqlite"
             service = ScanService()
 
             # Should use default SQLite database
@@ -27,6 +28,7 @@ class TestScanService:
         custom_url = "postgresql://user:pass@localhost/test"
 
         with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn:
+            mock_db_conn.return_value.dialect = "sqlite"
             service = ScanService(database_url=custom_url)
             mock_db_conn.assert_called_once_with(custom_url)
 
@@ -64,13 +66,14 @@ class TestScanService:
         mock_scanner.scan_all_namespaces.return_value = [mock_resource]
 
         # Mock repositories
-        with patch("src.api.scan_service.DatabaseConnection"), patch(
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(
             "src.api.scan_service.ScanRepository"
         ) as mock_scan_repo_class, patch(
             "src.api.scan_service.ResourceRepository"
         ) as mock_resource_repo_class, patch(
             "src.api.scan_service.ChangeRepository"
         ) as mock_change_repo_class:
+            mock_db_conn.return_value.dialect = "sqlite"
             # Mock repository instances
             mock_scan_repo = Mock()
             mock_scan_repo_class.return_value = mock_scan_repo
@@ -100,9 +103,10 @@ class TestScanService:
 
     def test_get_scan_history(self):
         """Test getting scan history."""
-        with patch("src.api.scan_service.DatabaseConnection"), patch(
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(
             "src.api.scan_service.ScanRepository"
         ) as mock_scan_repo_class:
+            mock_db_conn.return_value.dialect = "sqlite"
             mock_scan_repo = Mock()
             mock_scan_repo_class.return_value = mock_scan_repo
 
@@ -119,18 +123,19 @@ class TestScanService:
 
             assert result == expected_scans
             mock_scan_repo.get_recent_scans.assert_called_once_with(
-                cluster_context="test", namespace="default", days=30, limit=50
+                limit=50, cluster_context="test"
             )
 
     def test_get_scan_details(self):
         """Test getting detailed scan information."""
-        with patch("src.api.scan_service.DatabaseConnection"), patch(
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(
             "src.api.scan_service.ScanRepository"
         ) as mock_scan_repo_class, patch(
             "src.api.scan_service.ResourceRepository"
         ) as mock_resource_repo_class, patch(
             "src.api.scan_service.ChangeRepository"
         ) as mock_change_repo_class:
+            mock_db_conn.return_value.dialect = "sqlite"
             # Mock repositories
             mock_scan_repo = Mock()
             mock_scan_repo_class.return_value = mock_scan_repo
@@ -171,9 +176,10 @@ class TestScanService:
 
     def test_get_scan_details_not_found(self):
         """Test getting details for non-existent scan."""
-        with patch("src.api.scan_service.DatabaseConnection"), patch(
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(
             "src.api.scan_service.ScanRepository"
         ) as mock_scan_repo_class:
+            mock_db_conn.return_value.dialect = "sqlite"
             mock_scan_repo = Mock()
             mock_scan_repo_class.return_value = mock_scan_repo
             mock_scan_repo.get_scan_by_id.return_value = None
@@ -185,9 +191,10 @@ class TestScanService:
 
     def test_cleanup_old_scans(self):
         """Test cleanup of old scans."""
-        with patch("src.api.scan_service.DatabaseConnection"), patch(
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(
             "src.api.scan_service.ScanRepository"
         ) as mock_scan_repo_class:
+            mock_db_conn.return_value.dialect = "sqlite"
             mock_scan_repo = Mock()
             mock_scan_repo_class.return_value = mock_scan_repo
             mock_scan_repo.cleanup_old_scans.return_value = 5
@@ -201,7 +208,8 @@ class TestScanService:
 
     def test_calculate_resource_hash(self):
         """Test resource hash calculation."""
-        with patch("src.api.scan_service.DatabaseConnection"):
+        with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn:
+            mock_db_conn.return_value.dialect = "sqlite"
             service = ScanService()
 
             # Test data with volatile fields
@@ -245,6 +253,7 @@ class TestScanService:
         """Test service cleanup."""
         with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn_class:
             mock_db_conn = Mock()
+            mock_db_conn.dialect = "sqlite"
             mock_db_conn_class.return_value = mock_db_conn
 
             service = ScanService()
