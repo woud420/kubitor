@@ -45,6 +45,16 @@ class ResourceSummary(BaseModel):
     non_helm_managed: int = 0
 
 
+class ResourceUpgradeAction(BaseModel):
+    """Recommended upgrade action for a specific resource."""
+
+    name: str
+    kind: str
+    namespace: Optional[str] = None
+    current_version: str
+    suggested_version: str
+
+
 class ClusterReport(BaseModel):
     """Complete cluster report."""
 
@@ -54,3 +64,4 @@ class ClusterReport(BaseModel):
     helm_repositories: List[HelmRepository] = Field(default_factory=list)
     resources: ResourceSummary
     upgrade_suggestions: Optional[UpgradeSuggestion] = None
+    resource_upgrade_actions: List[ResourceUpgradeAction] = Field(default_factory=list)

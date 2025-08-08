@@ -4,6 +4,8 @@ from typing import Optional, List
 import re
 
 from ..model.cluster import UpgradeSuggestion
+from ..model.kubernetes import K8sResource
+from ..model.report import ResourceUpgradeAction
 from .versions import KUBERNETES_VERSIONS
 
 
@@ -12,6 +14,11 @@ class UpgradeAdvisor:
 
     def __init__(self):
         self.versions = KUBERNETES_VERSIONS
+        self.deprecated_apis = {
+            ("extensions/v1beta1", "Ingress"): "networking.k8s.io/v1",
+            ("apps/v1beta1", "Deployment"): "apps/v1",
+            ("apps/v1beta2", "Deployment"): "apps/v1",
+        }
 
     def parse_version(self, version_string: str) -> Optional[tuple[int, int]]:
         """Parse Kubernetes version string to major.minor tuple."""
@@ -48,6 +55,23 @@ class UpgradeAdvisor:
 
         return path
 
+    def get_deprecated_resources(self, resources: List[K8sResource]) -> List[ResourceUpgradeAction]:
+        """Find resources using deprecated API versions."""
+        actions: List[ResourceUpgradeAction] = []
+        for resource in resources:
+            suggested = self.deprecated_apis.get((resource.api_version, resource.kind))
+            if suggested:
+                actions.append(
+                    ResourceUpgradeAction(
+                        name=resource.name,
+                        namespace=resource.namespace,
+                        kind=resource.kind,
+                        current_version=resource.api_version,
+                        suggested_version=suggested,
+                    )
+                )
+        return actions
+
     def get_suggestions(
         self, current_version: str, target_version: Optional[str] = None
     ) -> UpgradeSuggestion:
@@ -71,10 +95,17 @@ class UpgradeAdvisor:
         # Get upgrade path
         upgrade_path = self.get_upgrade_path(current_version, next_version)
 
-        # Collect all upgrade notes, deprecations, and actions for the path
-        all_notes = []
-        all_deprecations = []
-        all_actions = []
+        # Collect all upgrade notes, deprecations, and actions for current and target versions
+        all_notes: List[str] = []
+        all_deprecations: List[str] = []
+        all_actions: List[str] = []
+
+        current_key = f"{major}.{minor}"
+        if current_key in self.versions:
+            version_info = self.versions[current_key]
+            all_notes.extend(version_info.get("notes", []))
+            all_deprecations.extend(version_info.get("deprecations", []))
+            all_actions.extend(version_info.get("actions", []))
 
         for version in upgrade_path:
             if version in self.versions:
