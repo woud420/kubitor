@@ -8,7 +8,12 @@ from collections import defaultdict
 
 from ..model.kubernetes import K8sResource
 from ..model.cluster import ClusterInfo, NodeInfo, ClusterVersion
-from ..model.report import ClusterReport, ResourceSummary, ReportFormat
+from ..model.report import (
+    ClusterReport,
+    ResourceSummary,
+    ReportFormat,
+    ResourceUpgradeAction,
+)
 from ..k8s import K8sClient
 from ..upgrade import UpgradeAdvisor
 from ..utils.logger import get_logger
@@ -37,12 +42,18 @@ class ClusterReporter:
             helm_repositories=self.helm_client.get_repositories(),
             resources=self._get_resource_summary(resources),
             upgrade_suggestions=None,
+            resource_upgrade_actions=[],
         )
 
         # Add upgrade suggestions if we have version info
         if report.cluster_info.server_version:
             version = report.cluster_info.server_version.git_version
             report.upgrade_suggestions = self.upgrade_advisor.get_suggestions(version)
+
+        # Check resources for deprecated API usage
+        report.resource_upgrade_actions = self.upgrade_advisor.get_deprecated_resources(
+            resources
+        )
 
         # Format report
         if output_format == ReportFormat.JSON:
@@ -211,6 +222,23 @@ class ClusterReporter:
             if len(sorted_ns) > 10:
                 lines.append(f"  ... and {len(sorted_ns) - 10} more namespaces")
         lines.append("")
+
+        # Deprecated API usage
+        if report.resource_upgrade_actions:
+            lines.append("DEPRECATED API USAGE")
+            lines.append("-" * 40)
+            by_api = defaultdict(list)
+            for action in report.resource_upgrade_actions:
+                api = f"{action.current_version}/{action.kind}"
+                identifier = (
+                    f"{action.namespace}/{action.name}" if action.namespace else action.name
+                )
+                by_api[api].append((identifier, action.suggested_version))
+            for api, resources in by_api.items():
+                lines.append(f"{api} → {resources[0][1]}")
+                for name, _ in resources:
+                    lines.append(f"  - {name}")
+            lines.append("")
 
         # Upgrade suggestions
         if report.upgrade_suggestions:

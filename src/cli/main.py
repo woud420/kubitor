@@ -350,9 +350,8 @@ def report(
 
             console.print(f"[green]✓[/green] Report saved to: [cyan]{report_path}[/cyan]")
 
-            # Also print to console if text format
-            if format == ReportFormat.TEXT:
-                console.print("\n" + report_content)
+            # Always print report content to console
+            console.print("\n" + report_content)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
