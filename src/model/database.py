@@ -13,9 +13,8 @@ from sqlalchemy import (
     Text,
     JSON,
     create_engine,
-    declarative_base,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 from pydantic import BaseModel, Field
 
 Base = declarative_base()
