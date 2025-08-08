@@ -25,20 +25,26 @@ class TestK8sClient:
         with pytest.raises(RuntimeError, match="kubectl command not found"):
             K8sClient()
 
-    def test_build_command_basic(self):
+    @patch("subprocess.run")
+    def test_build_command_basic(self, mock_run):
         """Test building basic kubectl command."""
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
         client = K8sClient()
         cmd = client._build_command(["get", "pods"])
         assert cmd == ["kubectl", "get", "pods"]
 
-    def test_build_command_with_context(self):
+    @patch("subprocess.run")
+    def test_build_command_with_context(self, mock_run):
         """Test building command with context."""
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
         client = K8sClient(context="test-context")
         cmd = client._build_command(["get", "pods"])
         assert cmd == ["kubectl", "--context", "test-context", "get", "pods"]
 
-    def test_build_command_with_namespace(self):
+    @patch("subprocess.run")
+    def test_build_command_with_namespace(self, mock_run):
         """Test building command with namespace."""
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
         client = K8sClient(namespace="test-namespace")
         cmd = client._build_command(["get", "pods"])
         assert cmd == ["kubectl", "get", "pods", "-n", "test-namespace"]
