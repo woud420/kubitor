@@ -1,11 +1,22 @@
 """Database models for historical tracking."""
 
 from datetime import datetime
-from typing import Optional, Dict, Any
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, Boolean, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+from typing import Dict, Any, Optional
+
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    ForeignKey,
+    Boolean,
+    Text,
+    JSON,
+    create_engine,
+    declarative_base,
+)
 from sqlalchemy.orm import relationship
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 Base = declarative_base()
 
@@ -127,6 +138,6 @@ class HistoricalSummary(BaseModel):
 
     total_scans: int
     date_range: tuple[datetime, datetime]
-    most_active_namespaces: Dict[str, int]
-    most_changed_resources: Dict[str, int]
-    cluster_versions: Dict[str, int]
+    most_active_namespaces: Dict[str, int] = Field(default_factory=dict)
+    most_changed_resources: Dict[str, int] = Field(default_factory=dict)
+    cluster_versions: Dict[str, int] = Field(default_factory=dict)
