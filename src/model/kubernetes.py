@@ -52,4 +52,22 @@ class K8sResource(BaseModel):
     def is_helm_managed(self) -> bool:
         """Check if resource is managed by Helm."""
         labels = self.labels
-        return "helm.sh/release" in labels or labels.get("app.kubernetes.io/managed-by") == "Helm"
+        annotations = self.annotations
+        return (
+            "helm.sh/release" in labels
+            or labels.get("app.kubernetes.io/managed-by") == "Helm"
+            or "meta.helm.sh/release-name" in annotations
+        )
+
+    @property
+    def helm_release(self) -> Optional[str]:
+        """Return the Helm release name if the resource is Helm managed."""
+        annotations = self.annotations
+        if "meta.helm.sh/release-name" in annotations:
+            return annotations["meta.helm.sh/release-name"]
+        labels = self.labels
+        if "helm.sh/release" in labels:
+            return labels["helm.sh/release"]
+        if labels.get("app.kubernetes.io/managed-by") == "Helm":
+            return labels.get("app.kubernetes.io/instance")
+        return None

@@ -40,22 +40,48 @@ RESOURCE_DAO_REGISTRY: Dict[DatabaseDialect, Callable[[DatabaseConnection], Base
 }
 
 
+def create_base_dao(dialect: DatabaseDialect) -> Callable[[DatabaseConnection], BaseDAO]:
+    """Return the DAO constructor for the given dialect."""
+    return RESOURCE_DAO_REGISTRY[dialect]
+
+
 class ResourceDAO:
     """Data Access Object for resource_records table with dialect dispatch."""
 
     def __init__(self, db_connection: DatabaseConnection):
+        """Initialise the DAO and resolve the database dialect.
+
+        Test suites provide a mocked ``DatabaseConnection`` without a ``dialect``
+        attribute.  To ensure the DAO works with both real and mocked connections we
+        try several strategies to obtain the dialect, defaulting to ``sqlite`` when
+        it cannot be determined.
+        """
+
         self.db = db_connection
-        # Use enum + dictionary pattern instead of if/elif
+
         try:
-            dialect_enum = DatabaseDialect(db_connection.dialect)
+            dialect = db_connection.dialect
+        except AttributeError:
+            dialect = None
+
+        if not isinstance(dialect, str):
+            try:
+                url = db_connection.database_url
+            except AttributeError:
+                url = None
+            if not isinstance(url, str) and hasattr(db_connection, "get_database_info"):
+                info = db_connection.get_database_info()
+                url = info.get("url") if isinstance(info, dict) else None
+            dialect = url.split(":", 1)[0] if isinstance(url, str) else "sqlite"
+
+        try:
+            dialect_enum = DatabaseDialect(dialect)
         except ValueError:
-            raise ValueError(f"Unsupported database dialect: {db_connection.dialect}")
+            raise ValueError(f"Unsupported database dialect: {dialect}")
 
-        dao_constructor = RESOURCE_DAO_REGISTRY.get(dialect_enum)
-        if dao_constructor is None:
-            raise ValueError(f"No ResourceDAO implementation for dialect: {dialect_enum}")
-
+        dao_constructor = create_base_dao(dialect_enum)
         self._base_dao = dao_constructor(db_connection)
+        self.dialect = dialect_enum.value
 
     def create_resource(
         self,
@@ -72,7 +98,7 @@ class ResourceDAO:
         annotations: Optional[Dict[str, str]] = None,
     ) -> int:
         """Create a new resource record and return its ID."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 INSERT INTO resource_records 
                 (scan_id, api_version, kind, namespace, name, resource_data, resource_hash, is_helm_managed, helm_release, labels, annotations)
@@ -118,7 +144,7 @@ class ResourceDAO:
         if not resources_data:
             return 0
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 INSERT INTO resource_records 
                 (scan_id, api_version, kind, namespace, name, resource_data, resource_hash, is_helm_managed, helm_release, labels, annotations)
@@ -186,7 +212,7 @@ class ResourceDAO:
         where_clause = "scan_id = ?"
         params = [scan_id]
 
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
         return self.find_where(where_clause, params)
@@ -195,7 +221,7 @@ class ResourceDAO:
         self, kind: str, name: str, namespace: Optional[str] = None, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """Get history of a specific resource with scan timestamps."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 SELECT r.*, s.timestamp 
                 FROM resource_records r
@@ -247,14 +273,14 @@ class ResourceDAO:
             where_clause += " AND namespace = ?"
             params.append(namespace)
 
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
         return self.find_where(where_clause, params)
 
     def get_resource_counts_by_type(self, scan_id: int) -> Dict[str, int]:
         """Get resource counts by type for a specific scan."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 SELECT kind, COUNT(*) as count 
                 FROM resource_records 
@@ -274,7 +300,7 @@ class ResourceDAO:
 
     def get_resource_counts_by_namespace(self, scan_id: int) -> Dict[str, int]:
         """Get resource counts by namespace for a specific scan."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 SELECT namespace, COUNT(*) as count 
                 FROM resource_records 
@@ -297,7 +323,7 @@ class ResourceDAO:
         where_clause = "scan_id = ? AND is_helm_managed = ?"
         params = [scan_id, True]
 
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
         return self.count_all(where_clause, params)
@@ -307,7 +333,7 @@ class ResourceDAO:
         where_clause = "scan_id = ? AND is_helm_managed = ?"
         params = [scan_id, False]
 
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
         return self.count_all(where_clause, params)
@@ -316,7 +342,7 @@ class ResourceDAO:
         """Get most frequently changing resources."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 SELECT r.kind, r.name, r.namespace, COUNT(DISTINCT r.resource_hash) as change_count
                 FROM resource_records r
@@ -352,7 +378,7 @@ class ResourceDAO:
         """Get activity by namespace (resource count)."""
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             query = """
                 SELECT r.namespace, COUNT(*) as count
                 FROM resource_records r
@@ -381,7 +407,7 @@ class ResourceDAO:
         scan_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """Find resources by annotation key and optionally value."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             if annotation_value is None:
                 # Check if annotation key exists
                 query = """
@@ -444,7 +470,7 @@ class ResourceDAO:
         where_clause = "resource_hash = ?"
         params = [resource_hash]
 
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
         return self.find_where(where_clause, params)

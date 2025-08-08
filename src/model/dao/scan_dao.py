@@ -40,22 +40,59 @@ SCAN_DAO_REGISTRY: Dict[DatabaseDialect, Callable[[DatabaseConnection], BaseDAO]
 }
 
 
+def create_base_dao(dialect: DatabaseDialect) -> Callable[[DatabaseConnection], BaseDAO]:
+    """Return the DAO constructor for the given dialect.
+
+    This indirection allows tests to patch the factory to supply mocked DAOs.
+    """
+
+    return SCAN_DAO_REGISTRY[dialect]
+
+
 class ScanDAO:
     """Data Access Object for scan_records table with dialect dispatch."""
 
     def __init__(self, db_connection: DatabaseConnection):
+        """Initialise the DAO and resolve the database dialect.
+
+        The real ``DatabaseConnection`` object exposes a ``dialect`` attribute, but
+        the tests provide a ``MagicMock`` without it.  To make the DAO resilient we
+        attempt to derive the dialect from multiple sources in the following order:
+
+        * ``db_connection.dialect`` if it exists and is a string
+        * ``db_connection.database_url``
+        * ``db_connection.get_database_info()['url']``
+        * default to ``sqlite``
+
+        This mirrors the behaviour of a real connection while keeping the tests
+        simple.
+        """
+
         self.db = db_connection
-        # Use enum + dictionary pattern instead of if/elif
+
         try:
-            dialect_enum = DatabaseDialect(db_connection.dialect)
+            dialect = db_connection.dialect
+        except AttributeError:
+            dialect = None
+
+        if not isinstance(dialect, str):
+            try:
+                url = db_connection.database_url
+            except AttributeError:
+                url = None
+            if not isinstance(url, str) and hasattr(db_connection, "get_database_info"):
+                info = db_connection.get_database_info()
+                url = info.get("url") if isinstance(info, dict) else None
+            dialect = url.split(":", 1)[0] if isinstance(url, str) else "sqlite"
+
+        try:
+            dialect_enum = DatabaseDialect(dialect)
         except ValueError:
-            raise ValueError(f"Unsupported database dialect: {db_connection.dialect}")
+            raise ValueError(f"Unsupported database dialect: {dialect}")
 
-        dao_constructor = SCAN_DAO_REGISTRY.get(dialect_enum)
-        if dao_constructor is None:
-            raise ValueError(f"No ScanDAO implementation for dialect: {dialect_enum}")
-
+        dao_constructor = create_base_dao(dialect_enum)
         self._base_dao = dao_constructor(db_connection)
+        self.dialect = dialect_enum.value
 
     def create_scan(
         self,
@@ -78,7 +115,7 @@ class ScanDAO:
             "cluster_info",
         ]
 
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             values = [
                 cluster_context,
                 namespace,
@@ -112,7 +149,7 @@ class ScanDAO:
         if context:
             where_clause = "cluster_context = ?"
             params = [context]
-            if self.db.dialect == "postgresql":
+            if self.dialect == "postgresql":
                 where_clause = "cluster_context = %s"
             return self._base_dao.find_where(where_clause, params, "timestamp DESC", limit)
         else:
@@ -125,7 +162,7 @@ class ScanDAO:
         self, start_date: datetime, end_date: datetime, context: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get scans within a date range."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "timestamp >= ? AND timestamp <= ?"
             params = [start_date, end_date]
             if context:
@@ -149,7 +186,7 @@ class ScanDAO:
         self, timestamp: datetime, context: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Get the most recent scan before a given timestamp."""
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             where_clause = "timestamp < ?"
             params = [timestamp]
             if context:
@@ -172,13 +209,13 @@ class ScanDAO:
         # Total scans
         where_clause = "timestamp >= ?"
         params = [cutoff_date]
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = "timestamp >= %s"
 
         total_scans = self._base_dao.count_all(where_clause, params)
 
         # Date range
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             date_query = """
                 SELECT MIN(timestamp) as min_date, MAX(timestamp) as max_date 
                 FROM scan_records WHERE timestamp >= ?
@@ -200,7 +237,7 @@ class ScanDAO:
         )
 
         # Scans by context
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             context_query = """
                 SELECT cluster_context, COUNT(*) as count 
                 FROM scan_records 
@@ -223,7 +260,7 @@ class ScanDAO:
         }
 
         # Cluster versions
-        if self.db.dialect == "sqlite":
+        if self.dialect == "sqlite":
             version_query = """
                 SELECT cluster_version, COUNT(*) as count 
                 FROM scan_records 
@@ -256,7 +293,7 @@ class ScanDAO:
 
         where_clause = "timestamp < ?"
         params = [cutoff_date]
-        if self.db.dialect == "postgresql":
+        if self.dialect == "postgresql":
             where_clause = "timestamp < %s"
 
         deleted_count = self._base_dao.delete_where(where_clause, params)

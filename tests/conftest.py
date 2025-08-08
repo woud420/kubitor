@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, Mock
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
+pytest_plugins = ("pytest_asyncio",)
+
 from src.database.connection import DatabaseConnection, AsyncDatabaseConnection
 
 
