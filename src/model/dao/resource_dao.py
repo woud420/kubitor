@@ -1,8 +1,9 @@
 """DAO for resource_records table operations using direct SQL."""
 
-import json
-from typing import List, Optional, Dict, Any, Tuple, Callable
 from enum import Enum
+from typing import Callable, Dict, Optional, List, Any
+from datetime import datetime, timedelta
+import json
 
 from .base_dao import BaseDAO, BaseSQLiteDAO, BasePostgreSQLDAO
 from ...database.connection import DatabaseConnection
@@ -313,8 +314,6 @@ class ResourceDAO:
 
     def get_most_active_resources(self, days: int = 30, limit: int = 10) -> List[Dict[str, Any]]:
         """Get most frequently changing resources."""
-        from datetime import datetime, timedelta
-
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         if self.db.dialect == "sqlite":
@@ -351,8 +350,6 @@ class ResourceDAO:
 
     def get_namespace_activity(self, days: int = 30) -> Dict[str, int]:
         """Get activity by namespace (resource count)."""
-        from datetime import datetime, timedelta
-
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
         if self.db.dialect == "sqlite":
