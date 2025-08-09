@@ -1,6 +1,6 @@
 """Analysis API service for historical analysis and reporting."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Callable
 from pathlib import Path
 from enum import Enum
@@ -241,7 +241,7 @@ class AnalysisService:
 
             report = {
                 "cluster_context": cluster_context,
-                "generated_at": datetime.utcnow().isoformat(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "period_days": days,
                 "status": status,
                 "health_score": health_score,

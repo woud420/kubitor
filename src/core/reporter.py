@@ -11,6 +11,8 @@ from ..model.cluster import ClusterInfo, NodeInfo, ClusterVersion
 from ..model.report import (
     ClusterReport,
     ResourceSummary,
+    ResourceDetail,
+    NamespaceDetail,
     ReportFormat,
     ResourceUpgradeAction,
 )
@@ -55,13 +57,15 @@ class ClusterReporter:
             resources
         )
 
-        # Format report
-        if output_format == ReportFormat.JSON:
-            return json.dumps(report.dict(), indent=2, default=str)
-        elif output_format == ReportFormat.YAML:
-            return yaml.dump(report.dict(), default_flow_style=False, sort_keys=False)
-        else:
-            return self._format_text_report(report)
+        # Format report using format handlers
+        format_handlers = {
+            ReportFormat.JSON: lambda r: json.dumps(r.model_dump(), indent=2, default=str),
+            ReportFormat.YAML: lambda r: yaml.dump(r.model_dump(), default_flow_style=False, sort_keys=False),
+            ReportFormat.TEXT: lambda r: self._format_text_report(r),
+        }
+        
+        handler = format_handlers.get(output_format, lambda r: self._format_text_report(r))
+        return handler(report)
 
     def _get_cluster_info(self) -> ClusterInfo:
         """Get cluster version and node information."""
@@ -128,6 +132,8 @@ class ClusterReporter:
 
         by_namespace = defaultdict(int)
         by_type = defaultdict(int)
+        resources_by_ns = defaultdict(list)
+        namespace_helm_releases = defaultdict(set)
 
         for resource in resources:
             # Count by type
@@ -143,8 +149,46 @@ class ClusterReporter:
             else:
                 summary.non_helm_managed += 1
 
+            # Create detailed resource entry
+            detail = ResourceDetail(
+                name=resource.name,
+                kind=resource.kind,
+                api_version=resource.api_version,
+                namespace=resource.namespace,
+                labels=resource.labels
+            )
+            
+            # Extract helm information if available
+            if resource.is_helm_managed:
+                helm_release = resource.labels.get("helm.sh/release") or resource.labels.get("app.kubernetes.io/instance")
+                helm_chart = resource.labels.get("helm.sh/chart") or resource.labels.get("app.kubernetes.io/name")
+                helm_version = resource.labels.get("app.kubernetes.io/version")
+                
+                detail.helm_release = helm_release
+                detail.helm_chart = helm_chart
+                detail.helm_version = helm_version
+                
+                if helm_release:
+                    namespace_helm_releases[namespace].add(helm_release)
+            
+            resources_by_ns[namespace].append(detail)
+
         summary.by_namespace = dict(by_namespace)
         summary.by_type = dict(by_type)
+        summary.resources_by_namespace = dict(resources_by_ns)
+        
+        # Create namespace details
+        for ns, count in by_namespace.items():
+            ns_detail = NamespaceDetail(
+                name=ns,
+                resource_count=count,
+                resources=resources_by_ns.get(ns, []),
+                helm_releases=list(namespace_helm_releases.get(ns, set()))
+            )
+            summary.namespace_details.append(ns_detail)
+        
+        # Sort namespace details by resource count
+        summary.namespace_details.sort(key=lambda x: x.resource_count, reverse=True)
 
         return summary
 
@@ -155,6 +199,18 @@ class ClusterReporter:
         lines.append("KUBERNETES CLUSTER REPORT")
         lines.append("=" * 80)
         lines.append(f"Generated: {report.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+        
+        # Quick summary
+        lines.append("QUICK SUMMARY")
+        lines.append("-" * 40)
+        lines.append(f"Total Namespaces: {len(report.resources.by_namespace)}")
+        lines.append(f"Total Resources: {report.resources.total_resources}")
+        lines.append(f"Total Pods: {report.resources.by_type.get('Pod', 0)}")
+        lines.append(f"Total Services: {report.resources.by_type.get('Service', 0)}")
+        lines.append(f"Total Deployments: {report.resources.by_type.get('Deployment', 0)}")
+        lines.append(f"Total ConfigMaps: {report.resources.by_type.get('ConfigMap', 0)}")
+        lines.append(f"Total Secrets: {report.resources.by_type.get('Secret', 0)}")
         lines.append("")
 
         # Cluster info
@@ -169,15 +225,26 @@ class ClusterReporter:
             lines.append(f"Client Version: {client.git_version}")
         lines.append("")
 
-        # Nodes
+        # Nodes - Enhanced display
         if report.cluster_info.nodes:
-            lines.append("NODES")
+            lines.append("CLUSTER NODES")
             lines.append("-" * 40)
-            for node in report.cluster_info.nodes:
-                lines.append(f"- {node.name}: {node.version} ({node.os})")
-                lines.append(f"  Status: {node.status}, Roles: {node.roles}")
-                lines.append(f"  Runtime: {node.container_runtime}")
+            lines.append(f"Total Nodes: {len(report.cluster_info.nodes)}")
             lines.append("")
+            
+            # Group nodes by role
+            by_role = defaultdict(list)
+            for node in report.cluster_info.nodes:
+                by_role[node.roles].append(node)
+            
+            for role, nodes in sorted(by_role.items()):
+                lines.append(f"{role.upper()} NODES ({len(nodes)}):")
+                for node in nodes:
+                    lines.append(f"  • {node.name}")
+                    lines.append(f"    Status: {node.status} | Version: {node.version}")
+                    lines.append(f"    OS: {node.os}")
+                    lines.append(f"    Runtime: {node.container_runtime}")
+                lines.append("")
 
         # Helm
         if report.helm_releases or report.helm_repositories:
@@ -200,27 +267,54 @@ class ClusterReporter:
                     lines.append(f"- {repo.name}: {repo.url}")
             lines.append("")
 
-        # Resources
-        lines.append("RESOURCE SUMMARY")
+        # Resources - Enhanced view
+        lines.append("RESOURCE OVERVIEW")
         lines.append("-" * 40)
         lines.append(f"Total Resources: {report.resources.total_resources}")
-        lines.append(f"Helm Managed: {report.resources.helm_managed}")
-        lines.append(f"Non-Helm Managed: {report.resources.non_helm_managed}")
+        lines.append(f"Helm Managed: {report.resources.helm_managed} ({report.resources.helm_managed * 100 // max(report.resources.total_resources, 1)}%)")
+        lines.append(f"Non-Helm Managed: {report.resources.non_helm_managed} ({report.resources.non_helm_managed * 100 // max(report.resources.total_resources, 1)}%)")
+        lines.append(f"Total Namespaces: {len(report.resources.by_namespace)}")
+        lines.append("")
 
+        # Resource types breakdown
         if report.resources.by_type:
-            lines.append("\nBy Type:")
-            for kind, count in sorted(report.resources.by_type.items()):
-                lines.append(f"  {kind}: {count}")
+            lines.append("RESOURCE TYPES")
+            lines.append("-" * 40)
+            sorted_types = sorted(report.resources.by_type.items(), key=lambda x: x[1], reverse=True)
+            for kind, count in sorted_types[:15]:
+                lines.append(f"  {kind:20} {count:>5}")
+            if len(sorted_types) > 15:
+                lines.append(f"  ... and {len(sorted_types) - 15} more types")
+            lines.append("")
 
-        if report.resources.by_namespace:
-            lines.append("\nBy Namespace (top 10):")
-            sorted_ns = sorted(
-                report.resources.by_namespace.items(), key=lambda x: x[1], reverse=True
-            )
-            for ns, count in sorted_ns[:10]:
-                lines.append(f"  {ns}: {count}")
-            if len(sorted_ns) > 10:
-                lines.append(f"  ... and {len(sorted_ns) - 10} more namespaces")
+        # Complete namespace breakdown
+        if report.resources.namespace_details:
+            lines.append("COMPLETE NAMESPACE BREAKDOWN")
+            lines.append("=" * 80)
+            
+            # Categorize namespaces
+            system_namespaces = []
+            app_namespaces = []
+            
+            for ns_detail in report.resources.namespace_details:
+                if self._is_system_namespace(ns_detail.name):
+                    system_namespaces.append(ns_detail)
+                else:
+                    app_namespaces.append(ns_detail)
+            
+            # Show application namespaces first
+            if app_namespaces:
+                lines.append("\nAPPLICATION NAMESPACES")
+                lines.append("-" * 40)
+                for ns_detail in sorted(app_namespaces, key=lambda x: x.resource_count, reverse=True):
+                    lines.extend(self._format_namespace_detail(ns_detail))
+            
+            # Show system namespaces if not filtered
+            if system_namespaces and not getattr(self, 'hide_system_resources', False):
+                lines.append("\nSYSTEM NAMESPACES (Kubernetes/EKS Managed)")
+                lines.append("-" * 40)
+                for ns_detail in sorted(system_namespaces, key=lambda x: x.resource_count, reverse=True):
+                    lines.extend(self._format_namespace_detail(ns_detail, is_system=True))
         lines.append("")
 
         # Deprecated API usage
@@ -269,3 +363,156 @@ class ClusterReporter:
                     lines.append(f"  • {rec}")
 
         return "\n".join(lines)
+    
+    def _is_system_namespace(self, namespace: str) -> bool:
+        """Check if namespace is a system/managed namespace."""
+        system_prefixes = [
+            'kube-', 'eks-', 'aks-', 'gke-', 'openshift-',
+            'istio-', 'linkerd-', 'cert-manager', 'ingress-',
+            'monitoring', 'logging', 'tracing', 'elastic-',
+            'prometheus', 'grafana', 'jaeger', 'fluentd',
+            'datadog', 'newrelic', 'splunk', 'dynatrace'
+        ]
+        
+        # Check if it's kube-system, kube-public, kube-node-lease, or default
+        if namespace in ['kube-system', 'kube-public', 'kube-node-lease', 'default']:
+            return True
+        
+        # Check for known system prefixes
+        for prefix in system_prefixes:
+            if namespace.startswith(prefix):
+                return True
+        
+        return False
+    
+    def _format_namespace_detail(self, ns_detail: NamespaceDetail, is_system: bool = False) -> List[str]:
+        """Format detailed namespace information."""
+        lines = []
+        
+        # Namespace header
+        header = f"\n📁 {ns_detail.name}"
+        if is_system:
+            header += " [SYSTEM]"
+        lines.append(header)
+        lines.append(f"   Total Resources: {ns_detail.resource_count}")
+        
+        # Group resources by kind
+        by_kind = defaultdict(list)
+        for res in ns_detail.resources:
+            by_kind[res.kind].append(res)
+        
+        # Show Services and their associated Pods
+        services = by_kind.get('Service', [])
+        pods = by_kind.get('Pod', [])
+        deployments = by_kind.get('Deployment', [])
+        statefulsets = by_kind.get('StatefulSet', [])
+        daemonsets = by_kind.get('DaemonSet', [])
+        
+        # Show workloads
+        if deployments or statefulsets or daemonsets:
+            lines.append("   Workloads:")
+            if deployments:
+                lines.append(f"     • Deployments ({len(deployments)}):")
+                for dep in deployments[:5]:
+                    helm_info = f" [Helm: {dep.helm_release}]" if dep.helm_release else ""
+                    lines.append(f"       - {dep.name}{helm_info}")
+                if len(deployments) > 5:
+                    lines.append(f"       ... and {len(deployments) - 5} more")
+            
+            if statefulsets:
+                lines.append(f"     • StatefulSets ({len(statefulsets)}):")
+                for sts in statefulsets[:3]:
+                    helm_info = f" [Helm: {sts.helm_release}]" if sts.helm_release else ""
+                    lines.append(f"       - {sts.name}{helm_info}")
+                if len(statefulsets) > 3:
+                    lines.append(f"       ... and {len(statefulsets) - 3} more")
+            
+            if daemonsets:
+                lines.append(f"     • DaemonSets ({len(daemonsets)}):")
+                for ds in daemonsets[:3]:
+                    helm_info = f" [Helm: {ds.helm_release}]" if ds.helm_release else ""
+                    lines.append(f"       - {ds.name}{helm_info}")
+                if len(daemonsets) > 3:
+                    lines.append(f"       ... and {len(daemonsets) - 3} more")
+        
+        # Show Services
+        if services:
+            lines.append(f"   Services ({len(services)}):")
+            for svc in services[:5]:
+                helm_info = f" [Helm: {svc.helm_release}]" if svc.helm_release else ""
+                # Try to match pods to services
+                svc_pods = self._find_pods_for_service(svc, pods)
+                pod_info = f" → {len(svc_pods)} pods" if svc_pods else ""
+                lines.append(f"     • {svc.name}{helm_info}{pod_info}")
+                if svc_pods and len(svc_pods) <= 3:
+                    for pod in svc_pods:
+                        lines.append(f"       └─ {pod.name}")
+            if len(services) > 5:
+                lines.append(f"     ... and {len(services) - 5} more services")
+        
+        # Show Pods not associated with services
+        if pods:
+            unmatched_pods = [p for p in pods if not any(
+                self._pod_matches_service(p, s) for s in services
+            )]
+            if unmatched_pods:
+                lines.append(f"   Standalone Pods ({len(unmatched_pods)}):")
+                for pod in unmatched_pods[:3]:
+                    helm_info = f" [Helm: {pod.helm_release}]" if pod.helm_release else ""
+                    lines.append(f"     • {pod.name}{helm_info}")
+                if len(unmatched_pods) > 3:
+                    lines.append(f"     ... and {len(unmatched_pods) - 3} more")
+        
+        # Show ConfigMaps and Secrets count
+        configmaps = by_kind.get('ConfigMap', [])
+        secrets = by_kind.get('Secret', [])
+        ingresses = by_kind.get('Ingress', [])
+        
+        if configmaps or secrets:
+            lines.append("   Configuration:")
+            if configmaps:
+                lines.append(f"     • ConfigMaps: {len(configmaps)}")
+            if secrets:
+                lines.append(f"     • Secrets: {len(secrets)}")
+        
+        if ingresses:
+            lines.append(f"   Ingresses ({len(ingresses)}):")
+            for ing in ingresses:
+                helm_info = f" [Helm: {ing.helm_release}]" if ing.helm_release else ""
+                lines.append(f"     • {ing.name}{helm_info}")
+        
+        # Show Helm releases
+        if ns_detail.helm_releases:
+            lines.append(f"   Helm Releases: {', '.join(ns_detail.helm_releases)}")
+        
+        # Show other resource types if significant
+        other_kinds = {k: v for k, v in by_kind.items() 
+                      if k not in ['Service', 'Pod', 'Deployment', 'StatefulSet', 
+                                  'DaemonSet', 'ConfigMap', 'Secret', 'Ingress']}
+        if other_kinds:
+            significant_others = [(k, len(v)) for k, v in other_kinds.items() if len(v) > 1]
+            if significant_others:
+                lines.append("   Other Resources:")
+                for kind, count in sorted(significant_others, key=lambda x: x[1], reverse=True)[:5]:
+                    lines.append(f"     • {kind}: {count}")
+        
+        return lines
+    
+    def _find_pods_for_service(self, service: ResourceDetail, pods: List[ResourceDetail]) -> List[ResourceDetail]:
+        """Find pods that match a service's selector."""
+        matching_pods = []
+        for pod in pods:
+            if self._pod_matches_service(pod, service):
+                matching_pods.append(pod)
+        return matching_pods
+    
+    def _pod_matches_service(self, pod: ResourceDetail, service: ResourceDetail) -> bool:
+        """Check if a pod matches a service's selector."""
+        # This is a simplified check - in reality we'd need to look at service selectors
+        # For now, we'll do basic name matching
+        if service.name in pod.name:
+            return True
+        # Check if they're from the same helm release
+        if service.helm_release and service.helm_release == pod.helm_release:
+            return True
+        return False

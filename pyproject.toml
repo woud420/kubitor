@@ -62,3 +62,16 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+addopts = [
+    "--verbose",
+    "--asyncio-mode=auto",
+    "--tb=short"
+]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may use external services)",
+    "slow: Slow tests (may take longer to run)"
+]
+filterwarnings = [
+    "ignore::RuntimeWarning:asyncio"
+]

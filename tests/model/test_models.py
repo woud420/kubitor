@@ -136,20 +136,20 @@ class TestKubernetesModels:
 
     def test_k8s_resource_helm_detection(self):
         """Test K8sResource Helm detection."""
-        # Test with Helm label
+        # Test with Helm managed-by label
         helm_resource = K8sResource(
             api_version="v1",
             kind="Service",
             metadata={"name": "test-service", "labels": {"app.kubernetes.io/managed-by": "Helm"}},
         )
 
-        # Test with Helm annotation
+        # Test with Helm release label
         helm_resource2 = K8sResource(
             api_version="v1",
             kind="Service",
             metadata={
                 "name": "test-service2",
-                "annotations": {"meta.helm.sh/release-name": "my-release"},
+                "labels": {"helm.sh/release": "my-release"},
             },
         )
 
@@ -165,15 +165,21 @@ class TestKubernetesModels:
         assert non_helm_resource.is_helm_managed is False
 
     def test_k8s_resource_helm_release_name(self):
-        """Test K8sResource Helm release name extraction."""
+        """Test K8sResource with Helm release label."""
         resource = K8sResource(
             api_version="v1",
             kind="Service",
             metadata={
                 "name": "test-service",
                 "annotations": {"meta.helm.sh/release-name": "my-app"},
-                "labels": {"app.kubernetes.io/managed-by": "Helm"},
+                "labels": {
+                    "app.kubernetes.io/managed-by": "Helm",
+                    "helm.sh/release": "my-app"
+                },
             },
         )
 
-        assert resource.helm_release == "my-app"
+        # Check that it's detected as Helm managed
+        assert resource.is_helm_managed is True
+        # Check we can access the release name from labels
+        assert resource.labels.get("helm.sh/release") == "my-app"

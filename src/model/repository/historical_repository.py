@@ -1,7 +1,7 @@
 """Repository for historical analysis and reporting."""
 
 from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..dao.scan_dao import ScanDAO
 from ..dao.resource_dao import ResourceDAO
@@ -23,7 +23,7 @@ class HistoricalRepository:
 
     def get_cluster_evolution(self, cluster_context: str, days: int = 30) -> Dict[str, Any]:
         """Get cluster evolution over time."""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Get scans for the cluster
         scans = self.scan_dao.find_by_cluster_context(cluster_context, since)
@@ -155,7 +155,7 @@ class HistoricalRepository:
         days: int = 30,
     ) -> Dict[str, Any]:
         """Get timeline for a specific resource."""
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Find all instances of this resource
         resources = self.resource_dao.find_resource_history(
@@ -209,7 +209,7 @@ class HistoricalRepository:
     ) -> Dict[str, Any]:
         """Analyze configuration drift from baseline."""
         # If no baseline specified, use the oldest scan in the period
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(timezone.utc) - timedelta(days=days)
         scans = self.scan_dao.find_by_cluster_context(cluster_context, since)
 
         if not scans:

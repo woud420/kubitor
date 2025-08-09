@@ -1,16 +1,16 @@
 """Database models for historical tracking without ORM dependencies."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ScanRecord(BaseModel):
     """Represents a complete cluster scan."""
 
     id: int | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cluster_context: Optional[str] = None
     namespace: Optional[str] = None
     scan_type: str = "full"  # full, incremental, etc.
@@ -26,7 +26,7 @@ class ResourceChange(BaseModel):
     """Tracks changes between resource versions."""
 
     id: int | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Resource identification
     kind: str
@@ -47,15 +47,13 @@ class ResourceChange(BaseModel):
 class ScanRecordResponse(ScanRecord):
     """Response model for scan records."""
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ResourceChangeResponse(ResourceChange):
     """Response model for resource changes."""
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class HistoricalSummary(BaseModel):

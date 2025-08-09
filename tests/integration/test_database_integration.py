@@ -173,16 +173,3 @@ class TestDatabaseIntegration:
         finally:
             await db.disconnect()
 
-
-@pytest.mark.integration
-@pytest.mark.slow
-class TestPostgreSQLIntegration:
-    """Integration tests for PostgreSQL (requires running PostgreSQL)."""
-
-    @pytest.mark.skip(reason="PostgreSQL tests require running PostgreSQL instance")
-    @pytest.mark.asyncio
-    async def test_postgresql_connection(self):
-        """Test PostgreSQL connection (only if available)."""
-        # This would require a running PostgreSQL instance
-        # Skip for now since we don't want to require PostgreSQL for tests
-        pytest.skip("PostgreSQL integration tests require running PostgreSQL instance")

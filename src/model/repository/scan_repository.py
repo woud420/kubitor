@@ -1,6 +1,6 @@
 """Repository for scan-related business operations."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 
 from ..dao.scan_dao import ScanDAO
@@ -102,7 +102,7 @@ class ScanRepository:
         return {
             "deleted_scans": deleted_count,
             "keep_days": keep_days,
-            "cutoff_date": datetime.utcnow() - timedelta(days=keep_days),
+            "cutoff_date": datetime.now(timezone.utc) - timedelta(days=keep_days),
         }
 
     def validate_scan_data(
@@ -144,7 +144,10 @@ class ScanRepository:
             except:
                 return None
 
-        age = datetime.utcnow() - timestamp.replace(tzinfo=None)
+        # Ensure timestamp is timezone-aware
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - timestamp
         return age.days
 
     def _calculate_resources_per_node(self, total_resources: int, node_count: int) -> float:

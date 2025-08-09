@@ -1,7 +1,7 @@
 """DAO for scan_records table operations using composition."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Type, Callable
 from enum import Enum
 
@@ -167,7 +167,7 @@ class ScanDAO:
 
     def get_scan_statistics(self, days: int = 30) -> Dict[str, Any]:
         """Get scan statistics for the last N days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Total scans
         where_clause = "timestamp >= ?"
@@ -193,10 +193,10 @@ class ScanDAO:
         date_range = (
             date_result["min_date"]
             if date_result and date_result["min_date"]
-            else datetime.utcnow(),
+            else datetime.now(timezone.utc),
             date_result["max_date"]
             if date_result and date_result["max_date"]
-            else datetime.utcnow(),
+            else datetime.now(timezone.utc),
         )
 
         # Scans by context
@@ -252,7 +252,7 @@ class ScanDAO:
 
     def cleanup_old_scans(self, keep_days: int = 90) -> int:
         """Delete scans older than specified days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=keep_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=keep_days)
 
         where_clause = "timestamp < ?"
         params = [cutoff_date]

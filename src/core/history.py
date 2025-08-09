@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ..model.database import ResourceChangeResponse, ScanRecordResponse, HistoricalSummary
-from ..database import DatabaseService
+from ..api import HistoryService
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -15,47 +15,15 @@ console = Console()
 
 
 class HistoricalAnalyzer:
-    """Provides historical analysis and comparison capabilities."""
+    """Provides historical analysis and display formatting capabilities."""
 
-    def __init__(self, database_service: Optional[DatabaseService] = None):
-        self.database_service = database_service or DatabaseService()
+    def __init__(self, history_service: Optional[HistoryService] = None):
+        self.history_service = history_service or HistoryService()
 
     def analyze_drift(self, days: int = 7) -> Dict[str, Any]:
         """Analyze configuration drift over the last N days."""
         logger.info(f"Analyzing drift over the last {days} days")
-
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        scans = self.database_service.get_scans_in_range(cutoff_date, datetime.utcnow())
-
-        if len(scans) < 2:
-            return {
-                "error": "Need at least 2 scans for drift analysis",
-                "available_scans": len(scans),
-            }
-
-        # Compare first and last scan
-        oldest_scan = scans[-1]
-        newest_scan = scans[0]
-
-        changes = self.database_service.detect_changes(newest_scan.id, oldest_scan.id)
-
-        # Categorize changes
-        drift_analysis = {
-            "time_range": {
-                "start": oldest_scan.timestamp,
-                "end": newest_scan.timestamp,
-                "days": (newest_scan.timestamp - oldest_scan.timestamp).days,
-            },
-            "total_changes": len(changes),
-            "changes_by_type": self._categorize_changes(changes),
-            "changes_by_namespace": self._group_changes_by_namespace(changes),
-            "most_active_resources": self._get_most_active_resources(changes),
-            "stability_score": self._calculate_stability_score(
-                changes, newest_scan.total_resources
-            ),
-        }
-
-        return drift_analysis
+        return self.history_service.analyze_drift(days=days)
 
     def generate_change_report(self, changes: List[ResourceChangeResponse]) -> str:
         """Generate a human-readable change report."""
@@ -179,28 +147,7 @@ class HistoricalAnalyzer:
         self, kind: str, name: str, namespace: Optional[str] = None, limit: int = 10
     ) -> List[Dict[str, Any]]:
         """Get timeline of changes for a specific resource."""
-        history = self.database_service.get_resource_history(kind, name, namespace, limit)
-
-        timeline = []
-        for i, record in enumerate(history):
-            timeline_entry = {
-                "timestamp": record["timestamp"],
-                "scan_id": record["scan_id"],
-                "resource_hash": record["resource_hash"],
-            }
-
-            # Detect changes from previous version
-            if i < len(history) - 1:
-                prev_record = history[i + 1]
-                if record["resource_hash"] != prev_record["resource_hash"]:
-                    timeline_entry["changed"] = True
-                    # Could add more detailed diff here
-                else:
-                    timeline_entry["changed"] = False
-
-            timeline.append(timeline_entry)
-
-        return timeline
+        return self.history_service.get_resource_timeline(kind, name, namespace, limit)
 
     def _categorize_changes(self, changes: List[ResourceChangeResponse]) -> Dict[str, int]:
         """Categorize changes by type."""

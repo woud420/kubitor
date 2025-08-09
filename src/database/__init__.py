@@ -1,6 +1,5 @@
-"""Database package for k8s-scanner."""
+"""Database package for k8s-scanner - connection management only."""
 
 from .connection import DatabaseConnection, AsyncDatabaseConnection
-from .service import DatabaseService
 
-__all__ = ["DatabaseConnection", "AsyncDatabaseConnection", "DatabaseService"]
+__all__ = ["DatabaseConnection", "AsyncDatabaseConnection"]

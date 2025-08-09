@@ -25,9 +25,6 @@ class K8sResource(BaseModel):
     data: Optional[Dict[str, Any]] = None  # For ConfigMaps/Secrets
     _resource_type: Optional[ResourceType] = None
 
-    class Config:
-        underscore_attrs_are_private = False
-
     @property
     def name(self) -> str:
         """Get resource name."""

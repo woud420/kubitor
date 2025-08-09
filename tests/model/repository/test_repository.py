@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.model.repository.scan_repository import ScanRepository
 
@@ -228,7 +228,7 @@ class TestScanRepository:
             repository = ScanRepository(mock_db_connection)
 
             # Execute
-            past_date = datetime.utcnow().replace(day=1)  # Beginning of month
+            past_date = datetime.now(timezone.utc).replace(day=1)  # Beginning of month
             age = repository._calculate_age_days(past_date)
 
             # Assert

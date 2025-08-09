@@ -1,7 +1,7 @@
 """Repository for change-related business operations."""
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from ..dao.change_dao import ChangeDAO
 from ...database.connection import DatabaseConnection
@@ -58,7 +58,7 @@ class ChangeRepository:
         self, hours: int = 24, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get recent changes within specified hours."""
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         return self.change_dao.find_since_date(since, limit)
 
     def bulk_create_changes(self, changes: List[Dict[str, Any]]) -> int:

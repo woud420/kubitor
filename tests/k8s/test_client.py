@@ -65,7 +65,11 @@ class TestK8sClient:
         """Test failed command execution."""
         from subprocess import CalledProcessError
 
-        mock_run.side_effect = CalledProcessError(1, "kubectl", stderr="Error message")
+        # First call succeeds (for _verify_kubectl), second fails (for actual command)
+        mock_run.side_effect = [
+            MagicMock(returncode=0),  # _verify_kubectl succeeds
+            CalledProcessError(1, "kubectl", stderr="Error message")  # execute fails
+        ]
 
         client = K8sClient()
         success, output = client.execute(["get", "pods"])

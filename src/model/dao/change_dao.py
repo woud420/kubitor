@@ -1,7 +1,7 @@
 """DAO for resource_changes table operations using composition."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Callable
 from enum import Enum
 
@@ -123,7 +123,7 @@ class ChangeDAO:
         self, days: int = 7, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Get recent changes within the last N days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         if self.db.dialect == "sqlite":
             where_clause = "timestamp >= ?"
@@ -170,7 +170,7 @@ class ChangeDAO:
 
     def get_change_statistics(self, days: int = 30) -> Dict[str, Any]:
         """Get change statistics for the last N days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         # Total changes
         if self.db.dialect == "sqlite":
@@ -305,7 +305,7 @@ class ChangeDAO:
 
     def cleanup_old_changes(self, keep_days: int = 90) -> int:
         """Delete changes older than specified days."""
-        cutoff_date = datetime.utcnow() - timedelta(days=keep_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=keep_days)
 
         if self.db.dialect == "sqlite":
             where_clause = "timestamp < ?"

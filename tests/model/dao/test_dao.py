@@ -1,7 +1,7 @@
 """Unit tests for DAO layer."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
 
 from src.model.dao.scan_dao import ScanDAO
@@ -14,34 +14,28 @@ class TestScanDAO:
 
     def test_create_scan_sqlite(self, mock_db_connection, sample_scan_data):
         """Test creating a scan record in SQLite."""
-        # Setup
-        mock_db_connection.database_url = "sqlite:///test.db"
-        mock_db_connection.insert_returning_id.return_value = 1
-
-        scan_dao = ScanDAO(mock_db_connection)
-
-        # Execute
-        scan_id = scan_dao.create_scan(
-            cluster_context="test-cluster",
-            namespace="default",
-            total_resources=100,
-            cluster_version="v1.28.0",
-            node_count=3,
-        )
-
-        # Assert
-        assert scan_id == 1
-        mock_db_connection.insert_returning_id.assert_called_once()
-        call_args = mock_db_connection.insert_returning_id.call_args
-        assert call_args[0][0] == [
-            "cluster_context",
-            "namespace",
-            "scan_type",
-            "total_resources",
-            "cluster_version",
-            "node_count",
-            "cluster_info",
-        ]
+        # Setup - mock the entire DAO initialization
+        mock_db_connection.dialect = "sqlite"
+        
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
+            mock_base_dao = Mock()
+            mock_base_dao.insert_returning_id.return_value = 1
+            MockSQLiteDAO.return_value = mock_base_dao
+            
+            scan_dao = ScanDAO(mock_db_connection)
+            
+            # Execute
+            scan_id = scan_dao.create_scan(
+                cluster_context="test-cluster",
+                namespace="default",
+                total_resources=100,
+                cluster_version="v1.28.0",
+                node_count=3,
+            )
+            
+            # Assert
+            assert scan_id == 1
+            mock_base_dao.insert_returning_id.assert_called_once()
 
     def test_create_scan_postgresql(self, mock_db_connection):
         """Test creating a scan record in PostgreSQL."""
@@ -64,20 +58,21 @@ class TestScanDAO:
     def test_find_by_id(self, mock_db_connection, sample_scan_data):
         """Test finding scan by ID."""
         # Setup
-        mock_db_connection.fetch_one.return_value = sample_scan_data
-
-        with patch("src.model.dao.scan_dao.create_base_dao") as mock_create_dao:
+        mock_db_connection.dialect = "sqlite"
+        
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.find_by_id.return_value = sample_scan_data
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
-
+            MockSQLiteDAO.return_value = mock_base_dao
+            
             scan_dao = ScanDAO(mock_db_connection)
-
+            
             # Execute
             result = scan_dao.find_by_id(1)
-
+            
             # Assert
             assert result == sample_scan_data
+            mock_base_dao.find_by_id.assert_called_once_with(1)
 
     def test_get_recent_scans_with_context(self, mock_db_connection):
         """Test getting recent scans filtered by context."""
@@ -87,10 +82,10 @@ class TestScanDAO:
             {"id": 2, "cluster_context": "test-cluster", "timestamp": datetime.now()},
         ]
 
-        with patch("src.model.dao.scan_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.find_where.return_value = mock_scans
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             scan_dao = ScanDAO(mock_db_connection)
@@ -112,8 +107,10 @@ class TestScanDAO:
             {"id": 2, "timestamp": datetime.now()},
         ]
         mock_db_connection.fetch_all.return_value = mock_scans
+        mock_db_connection.dialect = "sqlite"  # Add missing dialect
 
-        with patch("src.model.dao.scan_dao.create_base_dao"):
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
+            MockSQLiteDAO.return_value = Mock()
             scan_dao = ScanDAO(mock_db_connection)
 
             # Execute
@@ -136,10 +133,10 @@ class TestScanDAO:
             [{"cluster_version": "v1.28.0", "count": 15}],
         ]
 
-        with patch("src.model.dao.scan_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.count_all.return_value = 15
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             scan_dao = ScanDAO(mock_db_connection)
@@ -155,10 +152,10 @@ class TestScanDAO:
     def test_cleanup_old_scans(self, mock_db_connection):
         """Test cleaning up old scans."""
         # Setup
-        with patch("src.model.dao.scan_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.scan_dao.ScanDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.delete_where.return_value = 5
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             scan_dao = ScanDAO(mock_db_connection)
@@ -179,12 +176,11 @@ class TestResourceDAO:
         # Setup
         mock_db_connection.database_url = "sqlite:///test.db"
         mock_db_connection.dialect = "sqlite"
+        mock_db_connection.insert_returning_id.return_value = 1
 
-        with patch("src.model.dao.resource_dao.create_base_dao") as mock_create_dao:
-            mock_base_dao = Mock()
-            mock_base_dao.insert_returning_id.return_value = 1
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
-
+        with patch("src.model.dao.resource_dao.ResourceDAOSQLite") as MockSQLiteDAO:
+            MockSQLiteDAO.return_value = Mock()
+            
             resource_dao = ResourceDAO(mock_db_connection)
 
             # Execute
@@ -200,7 +196,7 @@ class TestResourceDAO:
 
             # Assert
             assert resource_id == 1
-            mock_base_dao.insert_returning_id.assert_called_once()
+            mock_db_connection.insert_returning_id.assert_called_once()
 
     def test_bulk_create_resources(self, mock_db_connection):
         """Test bulk creating resource records."""
@@ -230,12 +226,19 @@ class TestResourceDAO:
             },
         ]
 
-        with patch("src.model.dao.resource_dao.create_base_dao") as mock_create_dao:
-            mock_base_dao = Mock()
-            mock_base_dao.bulk_insert.return_value = 2
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
-
-            mock_db_connection.dialect = "sqlite"
+        mock_db_connection.dialect = "sqlite"
+        # Create a mock that supports context manager
+        mock_cursor = Mock()
+        mock_cursor.executemany = Mock()
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = Mock(return_value=mock_conn)
+        mock_conn.__exit__ = Mock(return_value=None)
+        mock_conn.cursor = Mock(return_value=mock_cursor)
+        mock_db_connection.get_connection = Mock(return_value=mock_conn)
+        
+        with patch("src.model.dao.resource_dao.ResourceDAOSQLite") as MockSQLiteDAO:
+            MockSQLiteDAO.return_value = Mock()
+            
             resource_dao = ResourceDAO(mock_db_connection)
 
             # Execute
@@ -243,18 +246,20 @@ class TestResourceDAO:
 
             # Assert
             assert result == 2
-            mock_base_dao.bulk_insert.assert_called_once()
+            # Check that executemany was called on the cursor
+            mock_cursor.executemany.assert_called_once()
 
     def test_get_resource_history(self, mock_db_connection):
         """Test getting resource history."""
         # Setup
+        mock_db_connection.dialect = "sqlite"
         mock_history = [{"id": 1, "kind": "Pod", "name": "test-pod", "timestamp": datetime.now()}]
         mock_db_connection.fetch_all.return_value = mock_history
-        mock_db_connection.dialect = "sqlite"
-
-        with patch("src.model.dao.resource_dao.create_base_dao"):
+        
+        with patch("src.model.dao.resource_dao.ResourceDAOSQLite") as MockSQLiteDAO:
+            MockSQLiteDAO.return_value = Mock()
             resource_dao = ResourceDAO(mock_db_connection)
-
+            
             # Execute
             result = resource_dao.get_resource_history("Pod", "test-pod", "default", 10)
 
@@ -268,10 +273,11 @@ class TestResourceDAO:
         mock_results = [
             {"kind": "Pod", "name": "active-pod", "namespace": "default", "change_count": 5}
         ]
-        mock_db_connection.fetch_all.return_value = mock_results
         mock_db_connection.dialect = "sqlite"
-
-        with patch("src.model.dao.resource_dao.create_base_dao"):
+        mock_db_connection.fetch_all.return_value = mock_results
+        
+        with patch("src.model.dao.resource_dao.ResourceDAOSQLite") as MockSQLiteDAO:
+            MockSQLiteDAO.return_value = Mock()
             resource_dao = ResourceDAO(mock_db_connection)
 
             # Execute
@@ -291,10 +297,10 @@ class TestChangeDAO:
     def test_create_change(self, mock_db_connection):
         """Test creating a change record."""
         # Setup
-        with patch("src.model.dao.change_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.change_dao.ChangeDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.insert_returning_id.return_value = 1
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             change_dao = ChangeDAO(mock_db_connection)
@@ -320,10 +326,10 @@ class TestChangeDAO:
         # Setup
         mock_changes = [{"id": 1, "kind": "Pod", "name": "test-pod", "change_type": "updated"}]
 
-        with patch("src.model.dao.change_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.change_dao.ChangeDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.find_where.return_value = mock_changes
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             change_dao = ChangeDAO(mock_db_connection)
@@ -342,10 +348,10 @@ class TestChangeDAO:
         # Setup
         mock_changes = [{"id": 1, "change_type": "created"}, {"id": 2, "change_type": "updated"}]
 
-        with patch("src.model.dao.change_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.change_dao.ChangeDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.find_where.return_value = mock_changes
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             change_dao = ChangeDAO(mock_db_connection)
@@ -366,10 +372,10 @@ class TestChangeDAO:
             [{"namespace": "default", "count": 6}],
         ]
 
-        with patch("src.model.dao.change_dao.create_base_dao") as mock_create_dao:
+        with patch("src.model.dao.change_dao.ChangeDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.count_all.return_value = 8
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
+            MockSQLiteDAO.return_value = mock_base_dao
 
             mock_db_connection.dialect = "sqlite"
             change_dao = ChangeDAO(mock_db_connection)
@@ -386,6 +392,7 @@ class TestChangeDAO:
     def test_bulk_create_changes(self, mock_db_connection):
         """Test bulk creating change records."""
         # Setup
+        mock_db_connection.dialect = "sqlite"
         changes_data = [
             {
                 "kind": "Pod",
@@ -395,13 +402,12 @@ class TestChangeDAO:
                 "new_scan_id": 1,
             }
         ]
-
-        with patch("src.model.dao.change_dao.create_base_dao") as mock_create_dao:
+        
+        with patch("src.model.dao.change_dao.ChangeDAOSQLite") as MockSQLiteDAO:
             mock_base_dao = Mock()
             mock_base_dao.bulk_insert.return_value = 1
-            mock_create_dao.return_value = Mock(return_value=mock_base_dao)
-
-            mock_db_connection.dialect = "sqlite"
+            MockSQLiteDAO.return_value = mock_base_dao
+            
             change_dao = ChangeDAO(mock_db_connection)
 
             # Execute

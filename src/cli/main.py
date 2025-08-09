@@ -8,13 +8,15 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 
-from ..core import ResourceOrganizer, ClusterReporter
+from ..core import ResourceOrganizer, ClusterReporter, InventoryCollector
+from ..core.history import HistoricalAnalyzer
 from ..k8s import K8sClient, ResourceScanner
 from ..model.export import ExportFormat, OrganizeBy
 from ..model.report import ReportFormat
 from ..model.annotations import parse_annotation_filters, AnnotationConfig
+from ..model.management import ManagementTool
 from ..database import DatabaseConnection
-from ..api import ScanService, AnalysisService
+from ..api import ScanService, AnalysisService, HistoryService
 from ..utils.logger import get_logger
 
 # Create CLI app
@@ -314,6 +316,9 @@ def report(
     include_types: List[str] = typer.Option(
         [], "--include-type", "-i", help="Only include these resource types in statistics"
     ),
+    hide_system: bool = typer.Option(
+        False, "--hide-system", help="Hide system/managed namespaces (kube-*, eks-*, etc.)"
+    ),
 ):
     """Generate a comprehensive cluster report."""
     try:
@@ -331,6 +336,7 @@ def report(
 
             # Generate report
             reporter = ClusterReporter(client)
+            reporter.hide_system_resources = hide_system
             report_content = reporter.generate_report(resources, format)
 
             # Determine filename
@@ -506,60 +512,21 @@ def changes(
 ):
     """Show recent resource changes."""
     try:
-        database_service = DatabaseService()
-        analyzer = HistoricalAnalyzer(database_service)
-
-        # Get recent scans and find changes
-        from datetime import datetime, timedelta
-
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-        scans = database_service.get_scans_in_range(cutoff_date, datetime.utcnow())
-
-        if len(scans) < 2:
-            console.print(
-                f"[yellow]Need at least 2 scans in the last {days} days for change detection[/yellow]"
-            )
-            console.print(f"Found {len(scans)} scans")
-            raise typer.Exit()
-
-        # Get changes between most recent scans
-        latest_scan = scans[0]
-        previous_scan = scans[1] if len(scans) > 1 else scans[-1]
-
-        changes = database_service.detect_changes(latest_scan.id, previous_scan.id)
-
+        history_service = HistoryService()
+        
+        changes = history_service.get_recent_changes(days=days, limit=limit)
+        
         if not changes:
             console.print("[green]No changes detected[/green]")
         else:
             console.print(f"Found [yellow]{len(changes)}[/yellow] changes")
-            analyzer.print_changes_table(changes[:limit])
-
-            if len(changes) > limit:
-                console.print(
-                    f"... and {len(changes) - limit} more changes (use --limit to see more)"
-                )
-
-    except Exception as e:
-        console.print(f"[red]Error:[/red] {str(e)}")
-        raise typer.Exit(1)
-
-
-@app.command()
-def compare(
-    scan1_id: int = typer.Argument(..., help="First scan ID"),
-    scan2_id: int = typer.Argument(..., help="Second scan ID"),
-):
-    """Compare two specific scans."""
-    try:
-        database_service = DatabaseService()
-        changes = database_service.detect_changes(scan2_id, scan1_id)
-
-        if not changes:
-            console.print("[green]No differences found between scans[/green]")
-        else:
-            console.print(f"Found [yellow]{len(changes)}[/yellow] differences")
-            analyzer = HistoricalAnalyzer(database_service)
+            
+            # Use HistoricalAnalyzer for display formatting
+            analyzer = HistoricalAnalyzer()
             analyzer.print_changes_table(changes)
+            
+            if len(changes) == limit:
+                console.print(f"... (use --limit to see more)")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
@@ -577,8 +544,8 @@ def resource_history(
 ):
     """Show history of a specific resource."""
     try:
-        database_service = DatabaseService()
-        analyzer = HistoricalAnalyzer(database_service)
+        history_service = HistoryService()
+        analyzer = HistoricalAnalyzer(history_service)
 
         timeline = analyzer.get_resource_timeline(kind, name, namespace, limit)
 
@@ -605,10 +572,10 @@ def summary(
 ):
     """Show historical summary and statistics."""
     try:
-        database_service = DatabaseService()
-        analyzer = HistoricalAnalyzer(database_service)
+        history_service = HistoryService()
+        analyzer = HistoricalAnalyzer(history_service)
 
-        summary = database_service.get_historical_summary(days)
+        summary = history_service.get_historical_summary(days)
         analyzer.print_historical_summary(summary)
 
         # Also show drift analysis
@@ -639,18 +606,18 @@ def cleanup(
 ):
     """Clean up old scan data."""
     try:
-        database_service = DatabaseService()
+        history_service = HistoryService()
 
         if dry_run:
-            from datetime import datetime, timedelta
+            from datetime import datetime, timedelta, timezone
 
-            cutoff_date = datetime.utcnow() - timedelta(days=days)
-            scans = database_service.get_scans_in_range(datetime.min, cutoff_date)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+            scans = history_service.get_scans_in_range(datetime.min, cutoff_date, None)
             console.print(
                 f"[yellow]Would delete {len(scans)} scans older than {days} days[/yellow]"
             )
         else:
-            deleted_count = database_service.cleanup_old_scans(days)
+            deleted_count = history_service.cleanup_old_scans(days)
             console.print(f"[green]✓[/green] Cleaned up {deleted_count} old scans")
 
     except Exception as e:
@@ -911,6 +878,175 @@ def health(
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
         raise typer.Exit(1)
+
+
+@app.command()
+def inventory(
+    context: Optional[str] = typer.Option(
+        None, "--context", "-c", help="Kubernetes context to use"
+    ),
+    namespace: Optional[str] = typer.Option(
+        None, "--namespace", "-n", help="Filter to specific namespace"
+    ),
+    include_system: bool = typer.Option(
+        False, "--include-system", help="Include system/managed namespaces"
+    ),
+    output_format: str = typer.Option(
+        "table", "--format", "-f", help="Output format: table, json, yaml"
+    ),
+    group_by: str = typer.Option(
+        "management", "--group-by", "-g", help="Group by: management, namespace, kind"
+    ),
+):
+    """Show cluster inventory - what's installed, versions, and management."""
+    try:
+        with console.status("[bold green]Collecting cluster inventory..."):
+            # Create client
+            client = K8sClient(context=context, namespace=namespace)
+            
+            # Collect inventory
+            collector = InventoryCollector(client, include_system=include_system)
+            inventory = collector.collect()
+            
+        # Helper function to prepare inventory data
+        def prepare_inventory_data():
+            return {
+                "cluster": inventory.cluster_name,
+                "kubernetes_version": inventory.kubernetes_version,
+                "node_count": inventory.node_count,
+                "scan_time": inventory.scan_timestamp.isoformat(),
+                "total_applications": inventory.total_applications,
+                "applications": [
+                    {
+                        "name": app.name,
+                        "namespace": app.namespace,
+                        "kind": app.kind,
+                        "version": app.version,
+                        "management": app.management_tool,
+                        "replicas": app.replicas,
+                        "images": app.images
+                    }
+                    for app in inventory.applications
+                ]
+            }
+        
+        # Output format handlers
+        def output_json():
+            import json
+            console.print(json.dumps(prepare_inventory_data(), indent=2))
+        
+        def output_yaml():
+            import yaml
+            console.print(yaml.dump(prepare_inventory_data(), default_flow_style=False))
+        
+        def output_table():
+            # Print header
+            console.print("\n[bold]CLUSTER INVENTORY[/bold]")
+            console.print("=" * 80)
+            console.print(f"Cluster: [cyan]{inventory.cluster_name}[/cyan]")
+            console.print(f"Kubernetes Version: [cyan]{inventory.kubernetes_version}[/cyan]")
+            console.print(f"Nodes: [cyan]{inventory.node_count}[/cyan]")
+            console.print(f"Applications: [cyan]{inventory.total_applications}[/cyan]")
+            console.print("")
+            
+            if not inventory.applications:
+                console.print("[yellow]No applications found[/yellow]")
+                return
+            
+            # Group and display based on group_by parameter
+            if group_by == "namespace":
+                grouped = inventory.applications_by_namespace
+                for namespace, apps in sorted(grouped.items()):
+                    console.print(f"\n[bold magenta]Namespace: {namespace}[/bold magenta] ({len(apps)} apps)")
+                    _print_applications_table(apps)
+            
+            elif group_by == "kind":
+                grouped = defaultdict(list)
+                for app in inventory.applications:
+                    grouped[app.kind].append(app)
+                
+                for kind, apps in sorted(grouped.items()):
+                    console.print(f"\n[bold magenta]{kind}s[/bold magenta] ({len(apps)})")
+                    _print_applications_table(apps)
+            
+            else:  # group by management (default)
+                grouped = inventory.applications_by_management
+                
+                # Define order and icons for management tools
+                tool_order = [
+                    (ManagementTool.HELM.value, "📦"),
+                    (ManagementTool.ARGOCD.value, "🔄"),
+                    (ManagementTool.FLUX.value, "⚡"),
+                    (ManagementTool.OPERATOR.value, "🤖"),
+                    (ManagementTool.KUSTOMIZE.value, "🔧"),
+                    (ManagementTool.TERRAFORM.value, "🏗️"),
+                    (ManagementTool.MANUAL.value, "✋"),
+                    (ManagementTool.UNKNOWN.value, "❓"),
+                ]
+                
+                for tool_name, icon in tool_order:
+                    if tool_name in grouped:
+                        apps = grouped[tool_name]
+                        console.print(f"\n{icon} [bold cyan]{tool_name} Managed[/bold cyan] ({len(apps)})")
+                        _print_applications_table(apps)
+            
+            # Summary statistics
+            console.print("\n[bold]SUMMARY[/bold]")
+            console.print("-" * 40)
+            
+            # Count by management tool
+            by_mgmt = inventory.applications_by_management
+            for tool in sorted(by_mgmt.keys()):
+                percentage = (len(by_mgmt[tool]) / inventory.total_applications) * 100
+                console.print(f"{tool:15} {len(by_mgmt[tool]):3} ({percentage:5.1f}%)")
+        
+        # Output format dispatcher
+        output_handlers = {
+            "json": output_json,
+            "yaml": output_yaml,
+            "table": output_table
+        }
+        
+        # Execute the appropriate handler
+        handler = output_handlers.get(output_format, output_table)
+        handler()
+            
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1)
+
+
+def _print_applications_table(apps: List):
+    """Helper to print applications in a table."""
+    from collections import defaultdict
+    
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Name", style="green")
+    table.add_column("Namespace", style="yellow")
+    table.add_column("Kind", style="cyan")
+    table.add_column("Version", style="blue")
+    table.add_column("Replicas", style="magenta")
+    table.add_column("Management", style="white")
+    
+    for app in sorted(apps, key=lambda x: (x.namespace, x.name)):
+        version = app.version or "-"
+        replicas = str(app.replicas) if app.replicas > 0 else "-"
+        
+        # Shorten management info for display
+        mgmt_display = app.management_tool
+        if app.management and app.management.release_name:
+            mgmt_display = f"{app.management_tool}:{app.management.release_name}"
+        
+        table.add_row(
+            app.name,
+            app.namespace,
+            app.kind,
+            version,
+            replicas,
+            mgmt_display
+        )
+    
+    console.print(table)
 
 
 @app.command()

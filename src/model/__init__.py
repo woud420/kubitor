@@ -4,6 +4,8 @@ from .cluster import ClusterInfo, NodeInfo, UpgradeSuggestion
 from .export import ExportFormat, OrganizeBy
 from .kubernetes import K8sResource, ResourceType
 from .report import ReportFormat, ClusterReport
+from .inventory import Application, ClusterInventory
+from .management import ManagementTool, ManagementInfo
 
 __all__ = [
     "ClusterInfo",
@@ -15,4 +17,8 @@ __all__ = [
     "ResourceType",
     "ReportFormat",
     "ClusterReport",
+    "Application",
+    "ClusterInventory",
+    "ManagementTool",
+    "ManagementInfo",
 ]

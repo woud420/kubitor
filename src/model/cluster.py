@@ -1,7 +1,7 @@
 """Cluster-related models."""
 
 from typing import Dict, Any, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class NodeInfo(BaseModel):
@@ -23,8 +23,7 @@ class ClusterVersion(BaseModel):
     git_version: str = Field(alias="gitVersion")
     platform: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ClusterInfo(BaseModel):

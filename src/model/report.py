@@ -35,6 +35,28 @@ class HelmRepository(BaseModel):
     url: str
 
 
+class ResourceDetail(BaseModel):
+    """Detailed resource information."""
+    
+    name: str
+    kind: str
+    api_version: str
+    namespace: Optional[str] = None
+    helm_release: Optional[str] = None
+    helm_chart: Optional[str] = None
+    helm_version: Optional[str] = None
+    labels: Dict[str, str] = Field(default_factory=dict)
+
+
+class NamespaceDetail(BaseModel):
+    """Detailed namespace information."""
+    
+    name: str
+    resource_count: int = 0
+    resources: List[ResourceDetail] = Field(default_factory=list)
+    helm_releases: List[str] = Field(default_factory=list)
+
+
 class ResourceSummary(BaseModel):
     """Resource statistics summary."""
 
@@ -43,6 +65,8 @@ class ResourceSummary(BaseModel):
     by_type: Dict[str, int] = Field(default_factory=dict)
     helm_managed: int = 0
     non_helm_managed: int = 0
+    namespace_details: List[NamespaceDetail] = Field(default_factory=list)
+    resources_by_namespace: Dict[str, List[ResourceDetail]] = Field(default_factory=dict)
 
 
 class ResourceUpgradeAction(BaseModel):

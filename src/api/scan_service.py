@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
@@ -98,7 +98,7 @@ class ScanService:
 
             scan_result = {
                 "scan_id": scan_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "cluster_context": context,
                 "namespace": namespace,
                 "total_resources": len(resources),
@@ -163,7 +163,7 @@ class ScanService:
 
         cleanup_result = {
             "deleted_scans": deleted_scans,
-            "cutoff_date": (datetime.utcnow() - timedelta(days=keep_days)).isoformat(),
+            "cutoff_date": (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat(),
         }
 
         logger.info(f"Cleanup completed: {cleanup_result}")
