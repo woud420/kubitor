@@ -1,7 +1,7 @@
 """Unit tests for DAO layer."""
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, MagicMock, patch, ANY
 from datetime import datetime, timedelta
 
 from src.model.dao.scan_dao import ScanDAO
@@ -227,14 +227,8 @@ class TestResourceDAO:
         ]
 
         mock_db_connection.dialect = "sqlite"
-        # Create a mock that supports context manager
-        mock_cursor = Mock()
-        mock_cursor.executemany = Mock()
-        mock_conn = MagicMock()
-        mock_conn.__enter__ = Mock(return_value=mock_conn)
-        mock_conn.__exit__ = Mock(return_value=None)
-        mock_conn.cursor = Mock(return_value=mock_cursor)
-        mock_db_connection.get_connection = Mock(return_value=mock_conn)
+        # Mock bulk_insert to return the number of records
+        mock_db_connection.bulk_insert.return_value = 2
         
         with patch("src.model.dao.resource_dao.ResourceDAOSQLite") as MockSQLiteDAO:
             MockSQLiteDAO.return_value = Mock()
@@ -246,8 +240,8 @@ class TestResourceDAO:
 
             # Assert
             assert result == 2
-            # Check that executemany was called on the cursor
-            mock_cursor.executemany.assert_called_once()
+            # Check that bulk_insert was called
+            mock_db_connection.bulk_insert.assert_called_once_with("resource_records", ANY)
 
     def test_get_resource_history(self, mock_db_connection):
         """Test getting resource history."""

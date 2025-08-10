@@ -41,7 +41,7 @@ class TestScanService:
         mock_client_class.return_value = mock_client
 
         mock_cluster_info = Mock()
-        mock_cluster_info.dict.return_value = {"nodes": ["node1"], "version": "v1.28.0"}
+        mock_cluster_info.model_dump.return_value = {"nodes": ["node1"], "version": "v1.28.0"}
         mock_cluster_info.server_version.git_version = "v1.28.0"
         mock_cluster_info.nodes = ["node1"]
         mock_client.get_cluster_info.return_value = mock_cluster_info
@@ -51,7 +51,7 @@ class TestScanService:
 
         # Mock resources
         mock_resource = Mock()
-        mock_resource.dict.return_value = {
+        mock_resource.model_dump.return_value = {
             "apiVersion": "v1",
             "kind": "Pod",
             "metadata": {"name": "test-pod", "namespace": "default"},
@@ -63,7 +63,7 @@ class TestScanService:
         mock_resource.labels = {}
         mock_resource.annotations = {}
 
-        mock_scanner.scan_all_namespaces.return_value = [mock_resource]
+        mock_scanner.scan.return_value = [mock_resource]
 
         # Mock repositories
         with patch("src.api.scan_service.DatabaseConnection") as mock_db_conn, patch(

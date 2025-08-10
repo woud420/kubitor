@@ -18,23 +18,37 @@ class ChangeRepository:
 
     def create_change_record(
         self,
-        resource_id: int,
-        change_type: str,
+        kind: str,
+        name: str,
+        namespace: Optional[str] = None,
+        change_type: str = "updated",
+        old_scan_id: Optional[int] = None,
+        new_scan_id: Optional[int] = None,
+        changed_fields: Optional[Dict[str, Any]] = None,
+        diff_summary: Optional[str] = None,
+        # Legacy parameters - kept for compatibility
+        resource_id: Optional[int] = None,
         field_path: Optional[str] = None,
         old_value: Optional[str] = None,
         new_value: Optional[str] = None,
         change_summary: Optional[str] = None,
     ) -> int:
         """Create a new change record."""
-        logger.debug(f"Creating change record for resource {resource_id}: {change_type}")
+        # Use diff_summary if change_summary is provided (legacy)
+        if change_summary and not diff_summary:
+            diff_summary = change_summary
+            
+        logger.debug(f"Creating change record for {kind}/{name}: {change_type}")
 
         change_id = self.change_dao.create_change(
-            resource_id=resource_id,
+            kind=kind,
+            namespace=namespace,
+            name=name,
             change_type=change_type,
-            field_path=field_path,
-            old_value=old_value,
-            new_value=new_value,
-            change_summary=change_summary,
+            old_scan_id=old_scan_id,
+            new_scan_id=new_scan_id,
+            changed_fields=changed_fields,
+            diff_summary=diff_summary,
         )
 
         logger.debug(f"Created change record with ID: {change_id}")

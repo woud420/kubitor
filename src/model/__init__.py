@@ -6,6 +6,18 @@ from .kubernetes import K8sResource, ResourceType
 from .report import ReportFormat, ClusterReport
 from .inventory import Application, ClusterInventory
 from .management import ManagementTool, ManagementInfo
+from .overview import (
+    ClusterOverviewData,
+    NamespaceOverview,
+    PodStatus,
+    WorkloadSummary,
+    DeploymentOverview,
+    StatefulSetOverview,
+    DaemonSetOverview,
+    JobOverview,
+    CronJobOverview,
+    ResourceCounts,
+)
 
 __all__ = [
     "ClusterInfo",
@@ -21,4 +33,14 @@ __all__ = [
     "ClusterInventory",
     "ManagementTool",
     "ManagementInfo",
+    "ClusterOverviewData",
+    "NamespaceOverview",
+    "PodStatus",
+    "WorkloadSummary",
+    "DeploymentOverview",
+    "StatefulSetOverview",
+    "DaemonSetOverview",
+    "JobOverview",
+    "CronJobOverview",
+    "ResourceCounts",
 ]

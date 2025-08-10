@@ -176,10 +176,16 @@ class ResourceDAO:
                 converted_data.append(converted_item)
 
         # Execute bulk insert
-        with self.db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.executemany(query, converted_data)
-            return len(resources_data)
+        records = []
+        for data_row in converted_data:
+            record = {}
+            col_names = ["scan_id", "api_version", "kind", "namespace", "name", "resource_data", 
+                        "resource_hash", "is_helm_managed", "helm_release", "labels", "annotations"]
+            for i, col_name in enumerate(col_names):
+                record[col_name] = data_row[i]
+            records.append(record)
+        
+        return self.db.bulk_insert("resource_records", records)
 
     def get_resources_by_scan(self, scan_id: int) -> List[Dict[str, Any]]:
         """Get all resources for a specific scan."""
@@ -189,7 +195,7 @@ class ResourceDAO:
         if self.db.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
-        return self.find_where(where_clause, params)
+        return self._base_dao.find_where(where_clause, params)
 
     def get_resource_history(
         self, kind: str, name: str, namespace: Optional[str] = None, limit: int = 10
@@ -250,7 +256,7 @@ class ResourceDAO:
         if self.db.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
-        return self.find_where(where_clause, params)
+        return self._base_dao.find_where(where_clause, params)
 
     def get_resource_counts_by_type(self, scan_id: int) -> Dict[str, int]:
         """Get resource counts by type for a specific scan."""
@@ -300,7 +306,7 @@ class ResourceDAO:
         if self.db.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
-        return self.count_all(where_clause, params)
+        return self._base_dao.count_all(where_clause, params)
 
     def get_non_helm_managed_count(self, scan_id: int) -> int:
         """Get count of non-Helm-managed resources for a scan."""
@@ -310,7 +316,7 @@ class ResourceDAO:
         if self.db.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
-        return self.count_all(where_clause, params)
+        return self._base_dao.count_all(where_clause, params)
 
     def get_most_active_resources(self, days: int = 30, limit: int = 10) -> List[Dict[str, Any]]:
         """Get most frequently changing resources."""
@@ -447,16 +453,16 @@ class ResourceDAO:
         if self.db.dialect == "postgresql":
             where_clause = where_clause.replace("?", "%s")
 
-        return self.find_where(where_clause, params)
+        return self._base_dao.find_where(where_clause, params)
 
     def cleanup_resources_by_scan_ids(self, scan_ids: List[int]) -> int:
         """Delete all resources for given scan IDs."""
         if not scan_ids:
             return 0
 
-        placeholders = self._build_placeholders(len(scan_ids))
+        placeholders = self._base_dao.build_placeholders(len(scan_ids))
         where_clause = f"scan_id IN ({placeholders})"
 
-        deleted_count = self.delete_where(where_clause, scan_ids)
+        deleted_count = self._base_dao.delete_where(where_clause, scan_ids)
         logger.info(f"Cleaned up {deleted_count} resource records")
         return deleted_count

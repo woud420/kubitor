@@ -45,17 +45,14 @@ class ScanService:
 
         try:
             # Initialize K8s client and scanner
-            k8s_client = K8sClient(context=context)
-            scanner = ResourceScanner(k8s_client)
+            k8s_client = K8sClient(context=context, namespace=namespace)
+            scanner = ResourceScanner(k8s_client, include_types=resource_types)
 
             # Get cluster info
             cluster_info = k8s_client.get_cluster_info()
 
             # Scan resources
-            if namespace:
-                resources = scanner.scan_namespace(namespace, resource_types)
-            else:
-                resources = scanner.scan_all_namespaces(resource_types)
+            resources = scanner.scan()
 
             # Create scan record
             scan_id = self.scan_repo.create_scan_record(
@@ -67,13 +64,13 @@ class ScanService:
                 if cluster_info.server_version
                 else None,
                 node_count=len(cluster_info.nodes),
-                cluster_info=cluster_info.dict(),
+                cluster_info=cluster_info.model_dump(),
             )
 
             # Store resources
             resource_records = []
             for resource in resources:
-                resource_data = resource.dict()
+                resource_data = resource.model_dump()
                 resource_hash = self._calculate_resource_hash(resource_data)
 
                 resource_record = {
@@ -114,7 +111,9 @@ class ScanService:
             return scan_result
 
         except Exception as e:
+            import traceback
             logger.error(f"Scan failed: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
     def get_scan_history(
@@ -193,18 +192,23 @@ class ScanService:
         # Find the most recent previous scan for the same context/namespace
         previous_scans = self.scan_repo.get_recent_scans(
             cluster_context=context,
-            namespace=namespace,
-            days=30,
-            limit=2,  # Current + previous
+            limit=10,  # Get more scans to filter by namespace
         )
 
-        if len(previous_scans) < 2:
+        # Filter scans by matching namespace
+        matching_scans = []
+        for scan in previous_scans:
+            # Only include scans with the same namespace configuration
+            if scan.get("namespace") == namespace:
+                matching_scans.append(scan)
+        
+        if len(matching_scans) < 2:
             logger.info("No previous scan found for change detection")
             return []
 
         # Get the previous scan (second in the list since they're ordered by recency)
         previous_scan_id = None
-        for scan in previous_scans:
+        for scan in matching_scans:
             if scan["id"] != current_scan_id:
                 previous_scan_id = scan["id"]
                 break
@@ -229,9 +233,12 @@ class ScanService:
         for key, resource in current_map.items():
             if key not in previous_map:
                 change_id = self.change_repo.create_change_record(
-                    resource_id=resource["id"],
+                    kind=resource["kind"],
+                    name=resource["name"],
+                    namespace=resource.get("namespace"),
                     change_type="created",
-                    change_summary=f"Resource {resource['kind']}/{resource['name']} was created",
+                    new_scan_id=current_scan_id,
+                    diff_summary=f"Resource {resource['kind']}/{resource['name']} was created",
                 )
                 changes.append(
                     {
@@ -262,9 +269,13 @@ class ScanService:
 
             if current_resource.get("resource_hash") != previous_resource.get("resource_hash"):
                 change_id = self.change_repo.create_change_record(
-                    resource_id=current_resource["id"],
+                    kind=current_resource["kind"],
+                    name=current_resource["name"],
+                    namespace=current_resource.get("namespace"),
                     change_type="updated",
-                    change_summary=f"Resource {current_resource['kind']}/{current_resource['name']} was updated",
+                    old_scan_id=previous_scan_id,
+                    new_scan_id=current_scan_id,
+                    diff_summary=f"Resource {current_resource['kind']}/{current_resource['name']} was updated",
                 )
                 changes.append(
                     {

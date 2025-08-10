@@ -8,7 +8,7 @@ from rich import print
 from rich.console import Console
 from rich.table import Table
 
-from ..core import ResourceOrganizer, ClusterReporter, InventoryCollector
+from ..core import ResourceOrganizer, ClusterReporter, InventoryCollector, ClusterOverview
 from ..core.history import HistoricalAnalyzer
 from ..k8s import K8sClient, ResourceScanner
 from ..model.export import ExportFormat, OrganizeBy
@@ -171,27 +171,10 @@ def scan(
 
             # Create K8s client and scanner for file export
             client = K8sClient(context=context, namespace=namespace)
-            scanner = ResourceScanner(client)
+            scanner = ResourceScanner(client, include_types=include_types, exclude_types=exclude_types)
 
-            # Determine resource types to scan
-            resource_types = None
-            if include_types:
-                resource_types = include_types
-            elif exclude_types:
-                # Get all resources and filter out excluded types
-                all_resources = (
-                    scanner.scan_all_namespaces()
-                    if not namespace
-                    else scanner.scan_namespace(namespace)
-                )
-                included_types = set(r.kind for r in all_resources) - set(exclude_types)
-                resource_types = list(included_types)
-
-            # Scan resources for file export
-            if namespace:
-                resources = scanner.scan_namespace(namespace, resource_types)
-            else:
-                resources = scanner.scan_all_namespaces(resource_types)
+            # Scan resources
+            resources = scanner.scan()
 
             # Apply annotation filtering if specified
             if annotation_filters or annotation_config:
@@ -256,7 +239,7 @@ def scan(
                 scan_service = ScanService()
                 try:
                     scan_result = scan_service.perform_scan(
-                        context=context, namespace=namespace, resource_types=resource_types
+                        context=context, namespace=namespace, resource_types=include_types or None
                     )
 
                     if detect_changes and scan_result.get("changes_detected", 0) > 0:
@@ -287,8 +270,8 @@ def scan(
             organizer.organize_and_save(resources)
 
             success_msg = "[green]✓[/green] Resources have been saved successfully!"
-            if store_history and scan_id:
-                success_msg += f" (Scan ID: {scan_id})"
+            if store_history and scan_result:
+                success_msg += f" (Scan ID: {scan_result['scan_id']})"
             console.print(success_msg)
 
     except Exception as e:
@@ -1047,6 +1030,55 @@ def _print_applications_table(apps: List):
         )
     
     console.print(table)
+
+
+@app.command()
+def overview(
+    context: Optional[str] = typer.Option(
+        None, "--context", "-c", help="Kubernetes context to use"
+    ),
+    namespace: Optional[str] = typer.Option(
+        None, "--namespace", "-n", help="Filter to specific namespace (shows all if not specified)"
+    ),
+    format: str = typer.Option(
+        "text", "--format", "-f", help="Output format: text, json, yaml"
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Save output to file"
+    ),
+):
+    """Show cluster overview with version, namespaces, and pod counts."""
+    try:
+        with console.status("[bold green]Collecting cluster overview..."):
+            # Create client
+            client = K8sClient(context=context, namespace=namespace)
+            
+            # Create overview scanner
+            overview_scanner = ClusterOverview(client)
+            overview_data = overview_scanner.get_overview()
+            
+        # Format output
+        formatted_output = overview_scanner.format_overview(overview_data, format=format)
+        
+        # Save to file if requested
+        if output:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with open(output, "w") as f:
+                f.write(formatted_output)
+            console.print(f"[green]✓[/green] Overview saved to: [cyan]{output}[/cyan]")
+        
+        # Always print to console
+        if format == "text":
+            console.print(formatted_output)
+        else:
+            # For json/yaml, use syntax highlighting
+            from rich.syntax import Syntax
+            syntax = Syntax(formatted_output, format, theme="monokai", line_numbers=False)
+            console.print(syntax)
+            
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1)
 
 
 @app.command()

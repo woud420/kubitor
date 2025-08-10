@@ -138,10 +138,9 @@ class BaseSQLiteDAO(BaseDAO):
 
     def insert_returning_id(self, columns: List[str], values: List[Any]) -> Optional[int]:
         """Insert record and return ID."""
-        placeholders = self.build_placeholders(len(values))
-        columns_str = ", ".join(columns)
-        query = f"INSERT INTO {self.get_table_name()} ({columns_str}) VALUES ({placeholders})"
-        return self.db.insert_returning_id(query, values)
+        # Convert columns and values to a dictionary for the db.insert_returning_id method
+        data = dict(zip(columns, values))
+        return self.db.insert_returning_id(self.get_table_name(), data)
 
     def bulk_insert(self, columns: List[str], values_list: List[List[Any]]) -> int:
         """Bulk insert records."""

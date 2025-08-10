@@ -51,7 +51,7 @@ class ResourceRepository:
 
     def get_resources_by_scan(self, scan_id: int) -> List[Dict[str, Any]]:
         """Get all resources for a scan."""
-        return self.resource_dao.find_by_scan_id(scan_id)
+        return self.resource_dao.get_resources_by_scan(scan_id)
 
     def get_resources_by_kind(
         self, kind: str, namespace: Optional[str] = None, limit: Optional[int] = None
@@ -63,7 +63,7 @@ class ResourceRepository:
         """Bulk create multiple resource records."""
         logger.info(f"Bulk creating {len(resources)} resource records")
 
-        count = self.resource_dao.bulk_insert(resources)
+        count = self.resource_dao.bulk_create_resources(resources)
 
         logger.info(f"Successfully created {count} resource records")
         return count
