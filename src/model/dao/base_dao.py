@@ -39,7 +39,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def count_all(self, where_clause: str = "", params: List = None) -> int:
+    def count_all(self, where_clause: str = "", params: Optional[List[Any]] = None) -> int:
         """Count records with optional where clause."""
         pass
 
@@ -49,7 +49,7 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def delete_where(self, where_clause: str, params: List = None) -> int:
+    def delete_where(self, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Delete records matching where clause."""
         pass
 
@@ -57,7 +57,7 @@ class BaseDAO(ABC):
     def find_where(
         self,
         where_clause: str,
-        params: List = None,
+        params: Optional[List[Any]] = None,
         order_by: str = "",
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
@@ -65,8 +65,23 @@ class BaseDAO(ABC):
         pass
 
     @abstractmethod
-    def update_where(self, set_clause: str, where_clause: str, params: List = None) -> int:
+    def update_where(self, set_clause: str, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Update records matching where clause."""
+        pass
+
+    @abstractmethod
+    def build_placeholders(self, count: int) -> str:
+        """Build parameter placeholders for the specific database dialect."""
+        pass
+
+    @abstractmethod
+    def insert_returning_id(self, columns: List[str], values: List[Any]) -> Optional[int]:
+        """Insert record and return ID."""
+        pass
+
+    @abstractmethod
+    def bulk_insert(self, columns: List[str], values_list: List[List[Any]]) -> int:
+        """Bulk insert records."""
         pass
 
 
@@ -89,7 +104,7 @@ class BaseSQLiteDAO(BaseDAO):
 
         return self.db.fetch_all(query, params)
 
-    def count_all(self, where_clause: str = "", params: List = None) -> int:
+    def count_all(self, where_clause: str = "", params: Optional[List[Any]] = None) -> int:
         """Count records with optional where clause."""
         query = f"SELECT COUNT(*) as count FROM {self.get_table_name()}"
         if where_clause:
@@ -104,7 +119,7 @@ class BaseSQLiteDAO(BaseDAO):
         rows_affected = self.db.execute(query, (record_id,))
         return rows_affected > 0
 
-    def delete_where(self, where_clause: str, params: List = None) -> int:
+    def delete_where(self, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Delete records matching where clause."""
         query = f"DELETE FROM {self.get_table_name()} WHERE {where_clause}"
         return self.db.execute(query, params or [])
@@ -112,7 +127,7 @@ class BaseSQLiteDAO(BaseDAO):
     def find_where(
         self,
         where_clause: str,
-        params: List = None,
+        params: Optional[List[Any]] = None,
         order_by: str = "",
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
@@ -127,7 +142,7 @@ class BaseSQLiteDAO(BaseDAO):
 
         return self.db.fetch_all(query, params or [])
 
-    def update_where(self, set_clause: str, where_clause: str, params: List = None) -> int:
+    def update_where(self, set_clause: str, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Update records matching where clause."""
         query = f"UPDATE {self.get_table_name()} SET {set_clause} WHERE {where_clause}"
         return self.db.execute(query, params or [])
@@ -147,14 +162,12 @@ class BaseSQLiteDAO(BaseDAO):
         if not values_list:
             return 0
 
-        placeholders = self.build_placeholders(len(columns))
-        columns_str = ", ".join(columns)
-        query = f"INSERT INTO {self.get_table_name()} ({columns_str}) VALUES ({placeholders})"
-
-        with self.db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.executemany(query, values_list)
-            return len(values_list)
+        # Since get_connection() returns self, we need to handle this directly
+        count = 0
+        for values in values_list:
+            if self.insert_returning_id(columns, values):
+                count += 1
+        return count
 
 
 class BasePostgreSQLDAO(BaseDAO):
@@ -176,7 +189,7 @@ class BasePostgreSQLDAO(BaseDAO):
 
         return self.db.fetch_all(query, params)
 
-    def count_all(self, where_clause: str = "", params: List = None) -> int:
+    def count_all(self, where_clause: str = "", params: Optional[List[Any]] = None) -> int:
         """Count records with optional where clause."""
         query = f"SELECT COUNT(*) as count FROM {self.get_table_name()}"
         if where_clause:
@@ -191,7 +204,7 @@ class BasePostgreSQLDAO(BaseDAO):
         rows_affected = self.db.execute(query, (record_id,))
         return rows_affected > 0
 
-    def delete_where(self, where_clause: str, params: List = None) -> int:
+    def delete_where(self, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Delete records matching where clause."""
         query = f"DELETE FROM {self.get_table_name()} WHERE {where_clause}"
         return self.db.execute(query, params or [])
@@ -199,7 +212,7 @@ class BasePostgreSQLDAO(BaseDAO):
     def find_where(
         self,
         where_clause: str,
-        params: List = None,
+        params: Optional[List[Any]] = None,
         order_by: str = "",
         limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
@@ -214,7 +227,7 @@ class BasePostgreSQLDAO(BaseDAO):
 
         return self.db.fetch_all(query, params or [])
 
-    def update_where(self, set_clause: str, where_clause: str, params: List = None) -> int:
+    def update_where(self, set_clause: str, where_clause: str, params: Optional[List[Any]] = None) -> int:
         """Update records matching where clause."""
         query = f"UPDATE {self.get_table_name()} SET {set_clause} WHERE {where_clause}"
         return self.db.execute(query, params or [])
@@ -225,30 +238,27 @@ class BasePostgreSQLDAO(BaseDAO):
 
     def insert_returning_id(self, columns: List[str], values: List[Any]) -> Optional[int]:
         """Insert record and return ID."""
-        placeholders = self.build_placeholders(len(values))
-        columns_str = ", ".join(columns)
-        query = f"INSERT INTO {self.get_table_name()} ({columns_str}) VALUES ({placeholders}) RETURNING id"
-        return self.db.insert_returning_id(query, values)
+        # Convert columns and values to a dictionary for the db.insert_returning_id method
+        data = dict(zip(columns, values))
+        return self.db.insert_returning_id(self.get_table_name(), data)
 
     def bulk_insert(self, columns: List[str], values_list: List[List[Any]]) -> int:
         """Bulk insert records."""
         if not values_list:
             return 0
 
-        placeholders = self.build_placeholders(len(columns))
-        columns_str = ", ".join(columns)
-        query = f"INSERT INTO {self.get_table_name()} ({columns_str}) VALUES ({placeholders})"
-
-        with self.db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.executemany(query, values_list)
-            return len(values_list)
+        # Since get_connection() returns self, we need to handle this directly
+        count = 0
+        for values in values_list:
+            if self.insert_returning_id(columns, values):
+                count += 1
+        return count
 
 
 # Dictionary mapping dialect enum to base DAO class
 BASE_DAO_REGISTRY: Dict[DatabaseDialect, Type[BaseDAO]] = {
-    DatabaseDialect.SQLITE: BaseSQLiteDAO,
-    DatabaseDialect.POSTGRESQL: BasePostgreSQLDAO,
+    DatabaseDialect.SQLITE: BaseSQLiteDAO,  # type: ignore[type-abstract]
+    DatabaseDialect.POSTGRESQL: BasePostgreSQLDAO,  # type: ignore[type-abstract]
 }
 
 

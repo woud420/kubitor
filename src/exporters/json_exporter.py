@@ -14,13 +14,13 @@ logger = get_logger(__name__)
 class JsonExporter(Exporter):
     """Export resources as JSON files."""
 
-    def export(self, resources: List[K8sResource], group_name: str):
+    def export(self, resources: List[K8sResource], group_name: str) -> None:
         """Export resources to JSON files."""
         if not resources:
             return
 
         # Group by kind
-        by_kind = {}
+        by_kind: dict[str, list[K8sResource]] = {}
         for resource in resources:
             kind = resource.kind.lower()
             if kind not in by_kind:

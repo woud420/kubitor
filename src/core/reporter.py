@@ -3,7 +3,7 @@
 import json
 import yaml
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from collections import defaultdict
 
 from ..model.kubernetes import K8sResource
@@ -31,6 +31,7 @@ class ClusterReporter:
         self.client = client
         self.helm_client = HelmClient()
         self.upgrade_advisor = UpgradeAdvisor()
+        self.hide_system_resources: bool = False
 
     def generate_report(self, resources: List[K8sResource], output_format: ReportFormat) -> str:
         """Generate a cluster report."""
@@ -89,7 +90,7 @@ class ClusterReporter:
 
         return cluster_info
 
-    def _parse_node_info(self, node_data: Dict[str, Any]) -> NodeInfo:
+    def _parse_node_info(self, node_data: Dict[str, Any]) -> Optional[NodeInfo]:
         """Parse node information."""
         try:
             metadata = node_data["metadata"]
@@ -130,8 +131,8 @@ class ClusterReporter:
         summary = ResourceSummary()
         summary.total_resources = len(resources)
 
-        by_namespace = defaultdict(int)
-        by_type = defaultdict(int)
+        by_namespace: Dict[str, int] = defaultdict(int)
+        by_type: Dict[str, int] = defaultdict(int)
         resources_by_ns = defaultdict(list)
         namespace_helm_releases = defaultdict(set)
 
@@ -354,8 +355,8 @@ class ClusterReporter:
 
             if sugg.required_actions:
                 lines.append("\nRequired Actions:")
-                for action in sugg.required_actions:
-                    lines.append(f"  ➤ {action}")
+                for required_action in sugg.required_actions:
+                    lines.append(f"  ➤ {required_action}")
 
             if sugg.general_recommendations:
                 lines.append("\nGeneral Recommendations:")

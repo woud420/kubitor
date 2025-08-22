@@ -99,11 +99,14 @@ class ChangeDAO:
                 change_type,
                 old_scan_id,
                 new_scan_id,
-                changed_fields,
+                json.dumps(changed_fields) if changed_fields else None,  # Convert to string for consistency
                 diff_summary,
             ]
 
-        return self._base_dao.insert_returning_id(columns, values)
+        result = self._base_dao.insert_returning_id(columns, values)
+        if result is None:
+            raise ValueError("Failed to create change record")
+        return result
 
     def find_by_id(self, change_id: int) -> Optional[Dict[str, Any]]:
         """Find change by ID."""
@@ -295,13 +298,16 @@ class ChangeDAO:
                     item["change_type"],
                     item.get("old_scan_id"),
                     item.get("new_scan_id"),
-                    item.get("changed_fields"),
+                    json.dumps(item.get("changed_fields")) if item.get("changed_fields") else None,
                     item.get("diff_summary"),
                 ]
                 for item in changes_data
             ]
 
-        return self._base_dao.bulk_insert(columns, values_list)
+        result = self._base_dao.bulk_insert(columns, values_list)
+        if result is None:
+            raise ValueError("Failed to bulk create change records")
+        return result
 
     def cleanup_old_changes(self, keep_days: int = 90) -> int:
         """Delete changes older than specified days."""
@@ -312,7 +318,28 @@ class ChangeDAO:
         else:
             where_clause = "timestamp < %s"
 
-        params = [cutoff_date]
+        params = [cutoff_date.isoformat()]
         deleted_count = self._base_dao.delete_where(where_clause, params)
         logger.info(f"Cleaned up {deleted_count} old change records")
         return deleted_count
+
+    def find_by_scan_resources(self, scan_id: int) -> List[Dict[str, Any]]:
+        """Find changes related to a specific scan."""
+        where_clause = "old_scan_id = ? OR new_scan_id = ?"
+        params = [scan_id, scan_id]
+        
+        if self.db.dialect == "postgresql":
+            where_clause = where_clause.replace("?", "%s")
+            
+        return self._base_dao.find_where(where_clause, params, "timestamp DESC")
+
+    def find_by_resource_id(self, resource_id: int) -> List[Dict[str, Any]]:
+        """Find changes for a specific resource ID."""
+        # For now, use a simple approach - could be enhanced with proper resource linking
+        where_clause = "name LIKE ?"
+        params = [f"%resource_{resource_id}%"]
+        
+        if self.db.dialect == "postgresql":
+            where_clause = where_clause.replace("?", "%s")
+            
+        return self._base_dao.find_where(where_clause, params, "timestamp DESC")

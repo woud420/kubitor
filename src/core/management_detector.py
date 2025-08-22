@@ -1,6 +1,6 @@
 """Detect management tools for Kubernetes resources."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Callable
 from ..model.management import ManagementTool, ManagementInfo
 from ..utils.logger import get_logger
 
@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 class ManagementDetector:
     """Detect how Kubernetes resources are managed."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         # Define detection strategies as a list of tuples (checker, info_getter)
         # Order matters - first match wins
         self._detection_strategies = [
@@ -23,10 +23,26 @@ class ManagementDetector:
     
     def detect(self, resource: Dict[str, Any]) -> ManagementInfo:
         """Detect management tool for a resource."""
+        if not isinstance(resource, dict):
+            logger.warning(f"Expected dict for resource, got {type(resource).__name__}")
+            return ManagementInfo(ManagementTool.MANUAL)
+        
         metadata = resource.get("metadata", {})
+        if not isinstance(metadata, dict):
+            logger.warning("Resource metadata is not a dict")
+            return ManagementInfo(ManagementTool.MANUAL)
+            
         labels = metadata.get("labels", {})
         annotations = metadata.get("annotations", {})
         owner_refs = metadata.get("ownerReferences", [])
+        
+        # Ensure we have proper types
+        if not isinstance(labels, dict):
+            labels = {}
+        if not isinstance(annotations, dict):
+            annotations = {}
+        if not isinstance(owner_refs, list):
+            owner_refs = []
         
         # Try each detection strategy
         for checker, info_getter in self._detection_strategies:
@@ -40,17 +56,21 @@ class ManagementDetector:
         # Default to manual if no management tool detected
         return ManagementInfo(ManagementTool.MANUAL)
     
-    def _is_helm_managed(self, labels: Dict, annotations: Dict) -> bool:
+    def _is_helm_managed(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> bool:
         """Check if resource is managed by Helm."""
-        return (
-            labels.get("app.kubernetes.io/managed-by") == "Helm" or
-            "helm.sh/release" in labels or
-            "meta.helm.sh/release-name" in annotations
-        )
+        try:
+            return (
+                labels.get("app.kubernetes.io/managed-by") == "Helm" or
+                "helm.sh/release" in labels or
+                "meta.helm.sh/release-name" in annotations
+            )
+        except (AttributeError, TypeError) as e:
+            logger.debug(f"Error checking Helm management: {e}")
+            return False
     
-    def _get_helm_info(self, labels: Dict, annotations: Dict) -> ManagementInfo:
+    def _get_helm_info(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> ManagementInfo:
         """Extract Helm management information."""
-        details = {}
+        details: Dict[str, Any] = {}
         
         # Get release name
         details["release_name"] = (
@@ -74,16 +94,16 @@ class ManagementDetector:
         
         return ManagementInfo(ManagementTool.HELM, details)
     
-    def _is_argocd_managed(self, labels: Dict, annotations: Dict) -> bool:
+    def _is_argocd_managed(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> bool:
         """Check if resource is managed by ArgoCD."""
         return (
             "argocd.argoproj.io/instance" in labels or
             "app.kubernetes.io/managed-by" in labels and "argocd" in labels["app.kubernetes.io/managed-by"].lower()
         )
     
-    def _get_argocd_info(self, labels: Dict, annotations: Dict) -> ManagementInfo:
+    def _get_argocd_info(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> ManagementInfo:
         """Extract ArgoCD management information."""
-        details = {}
+        details: Dict[str, Any] = {}
         
         details["release_name"] = labels.get("argocd.argoproj.io/instance")
         details["sync_wave"] = annotations.get("argocd.argoproj.io/sync-wave")
@@ -91,7 +111,7 @@ class ManagementDetector:
         
         return ManagementInfo(ManagementTool.ARGOCD, details)
     
-    def _is_flux_managed(self, labels: Dict, annotations: Dict) -> bool:
+    def _is_flux_managed(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> bool:
         """Check if resource is managed by Flux."""
         return (
             "kustomize.toolkit.fluxcd.io/name" in labels or
@@ -99,9 +119,9 @@ class ManagementDetector:
             "fluxcd.io/sync-gc-mark" in labels
         )
     
-    def _get_flux_info(self, labels: Dict, annotations: Dict) -> ManagementInfo:
+    def _get_flux_info(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> ManagementInfo:
         """Extract Flux management information."""
-        details = {}
+        details: Dict[str, Any] = {}
         
         details["release_name"] = (
             labels.get("kustomize.toolkit.fluxcd.io/name") or
@@ -114,16 +134,16 @@ class ManagementDetector:
         
         return ManagementInfo(ManagementTool.FLUX, details)
     
-    def _is_kustomize_managed(self, labels: Dict, annotations: Dict) -> bool:
+    def _is_kustomize_managed(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> bool:
         """Check if resource is managed by Kustomize."""
         return (
             "app.kubernetes.io/managed-by" in labels and 
             "kustomize" in labels["app.kubernetes.io/managed-by"].lower()
         ) or "kustomize.config.k8s.io/origin" in annotations
     
-    def _get_kustomize_info(self, labels: Dict, annotations: Dict) -> ManagementInfo:
+    def _get_kustomize_info(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> ManagementInfo:
         """Extract Kustomize management information."""
-        details = {}
+        details: Dict[str, Any] = {}
         
         if "kustomize.config.k8s.io/origin" in annotations:
             origin = annotations["kustomize.config.k8s.io/origin"]
@@ -131,18 +151,18 @@ class ManagementDetector:
         
         return ManagementInfo(ManagementTool.KUSTOMIZE, details)
     
-    def _is_terraform_managed(self, labels: Dict, annotations: Dict) -> bool:
+    def _is_terraform_managed(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> bool:
         """Check if resource is managed by Terraform."""
         return (
             "app.kubernetes.io/managed-by" in labels and 
             "terraform" in labels["app.kubernetes.io/managed-by"].lower()
         ) or "kubernetes.io/change-cause" in annotations and "terraform" in annotations["kubernetes.io/change-cause"].lower()
     
-    def _get_terraform_info(self, labels: Dict, annotations: Dict) -> ManagementInfo:
+    def _get_terraform_info(self, labels: Dict[str, Any], annotations: Dict[str, Any]) -> ManagementInfo:
         """Extract Terraform management information."""
         return ManagementInfo(ManagementTool.TERRAFORM)
     
-    def _is_operator_managed(self, owner_refs: List[Dict]) -> bool:
+    def _is_operator_managed(self, owner_refs: List[Dict[str, Any]]) -> bool:
         """Check if resource is managed by an operator."""
         if not owner_refs:
             return False
@@ -159,9 +179,9 @@ class ManagementDetector:
         
         return False
     
-    def _get_operator_info(self, owner_refs: List[Dict]) -> ManagementInfo:
+    def _get_operator_info(self, owner_refs: List[Dict[str, Any]]) -> ManagementInfo:
         """Extract operator management information."""
-        details = {}
+        details: Dict[str, Any] = {}
         
         for ref in owner_refs:
             if ref.get("controller"):

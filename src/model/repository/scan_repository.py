@@ -93,17 +93,6 @@ class ScanRepository:
 
         return stats
 
-    def cleanup_old_scans(self, keep_days: int = 90) -> Dict[str, Any]:
-        """Clean up old scans and return summary."""
-        logger.info(f"Cleaning up scans older than {keep_days} days")
-
-        deleted_count = self.scan_dao.cleanup_old_scans(keep_days)
-
-        return {
-            "deleted_scans": deleted_count,
-            "keep_days": keep_days,
-            "cutoff_date": datetime.now(timezone.utc) - timedelta(days=keep_days),
-        }
 
     def validate_scan_data(
         self,
@@ -168,3 +157,29 @@ class ScanRepository:
         else:
             days_per_scan = 1 / avg_per_day
             return f"1 scan every {days_per_scan:.1f} days"
+
+    def get_scans_in_range(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        context: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get scans within date range - alias for get_scans_in_date_range."""
+        return self.get_scans_in_date_range(start_date, end_date, context)
+
+    def cleanup_old_scans(self, days_to_keep: int = 90) -> int:
+        """Clean up old scans and return count of deleted records."""
+        result = self.cleanup_old_scans_dict(days_to_keep)
+        return int(result['deleted_scans'])
+        
+    def cleanup_old_scans_dict(self, keep_days: int = 90) -> Dict[str, Any]:
+        """Clean up old scans and return detailed summary."""
+        logger.info(f"Cleaning up scans older than {keep_days} days")
+
+        deleted_count = self.scan_dao.cleanup_old_scans(keep_days)
+
+        return {
+            "deleted_scans": deleted_count,
+            "keep_days": keep_days,
+            "cutoff_date": datetime.now(timezone.utc) - timedelta(days=keep_days),
+        }

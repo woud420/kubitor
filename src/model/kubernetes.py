@@ -28,7 +28,8 @@ class K8sResource(BaseModel):
     @property
     def name(self) -> str:
         """Get resource name."""
-        return self.metadata.get("name", "")
+        name = self.metadata.get("name", "")
+        return str(name) if name is not None else ""
 
     @property
     def namespace(self) -> Optional[str]:
@@ -38,12 +39,14 @@ class K8sResource(BaseModel):
     @property
     def labels(self) -> Dict[str, str]:
         """Get resource labels."""
-        return self.metadata.get("labels", {})
+        labels = self.metadata.get("labels", {})
+        return dict(labels) if isinstance(labels, dict) else {}
 
     @property
     def annotations(self) -> Dict[str, str]:
         """Get resource annotations."""
-        return self.metadata.get("annotations", {})
+        annotations = self.metadata.get("annotations", {})
+        return dict(annotations) if isinstance(annotations, dict) else {}
 
     @property
     def is_helm_managed(self) -> bool:

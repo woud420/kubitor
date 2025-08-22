@@ -1,7 +1,8 @@
 """Main CLI interface using Typer."""
 
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Callable
+from collections import defaultdict
 
 import typer
 from rich import print
@@ -18,6 +19,14 @@ from ..model.management import ManagementTool
 from ..database import DatabaseConnection
 from ..api import ScanService, AnalysisService, HistoryService
 from ..utils.logger import get_logger
+from ..core.exceptions import (
+    ValidationError,
+    KubernetesConnectionError,
+    KubernetesCommandError,
+    ScanExecutionError,
+    ExportExecutionError,
+    DatabaseConnectionError
+)
 
 # Create CLI app
 app = typer.Typer(
@@ -28,6 +37,33 @@ app = typer.Typer(
 
 console = Console()
 logger = get_logger(__name__)
+
+
+def _validate_kubernetes_identifier(value: str) -> bool:
+    """Validate Kubernetes identifier format.
+    
+    Args:
+        value: The identifier to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    import re
+    return bool(re.match(r'^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$', value))
+
+
+def _validate_annotation_key(key: str) -> bool:
+    """Validate annotation key format.
+    
+    Args:
+        key: The annotation key to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    import re
+    # Annotation keys can have optional prefix separated by slash
+    return bool(re.match(r'^([a-z0-9.-]+/)?[a-zA-Z0-9._-]+$', key))
 
 
 from enum import Enum
@@ -72,8 +108,12 @@ CHANGE_TYPE_FORMATTERS: Dict[ChangeType, Callable[[str], str]] = {
 }
 
 
-def _print_changes_table(changes: List[Dict]) -> None:
-    """Print changes in a formatted table."""
+def _print_changes_table(changes: List[Dict[str, Any]]) -> None:
+    """Print changes in a formatted table.
+    
+    Args:
+        changes: List of change dictionaries to display
+    """
     if not changes:
         return
 
@@ -157,9 +197,20 @@ def scan(
         "--detect-changes/--no-detect-changes",
         help="Detect and report changes since last scan",
     ),
-):
+) -> None:
     """Scan cluster and extract resources to files."""
     try:
+        # Input validation
+        if namespace and not _validate_kubernetes_identifier(namespace):
+            console.print(f"[red]Error:[/red] Invalid namespace format: {namespace}")
+            raise typer.Exit(1)
+        if context and not _validate_kubernetes_identifier(context):
+            console.print(f"[red]Error:[/red] Invalid context format: {context}")
+            raise typer.Exit(1)
+        if organize_annotation_key and not _validate_annotation_key(organize_annotation_key):
+            console.print(f"[red]Error:[/red] Invalid annotation key format: {organize_annotation_key}")
+            raise typer.Exit(1)
+            
         with console.status("[bold green]Scanning Kubernetes cluster..."):
             # Log scan parameters
             if context:
@@ -274,8 +325,29 @@ def scan(
                 success_msg += f" (Scan ID: {scan_result['scan_id']})"
             console.print(success_msg)
 
+    except ValidationError as e:
+        console.print(f"[red]Validation Error:[/red] {e.message}")
+        if e.field:
+            console.print(f"Field: {e.field}")
+        raise typer.Exit(1)
+    except KubernetesConnectionError as e:
+        console.print(f"[red]Kubernetes Connection Error:[/red] {e.message}")
+        if e.context:
+            console.print(f"Context: {e.context}")
+        raise typer.Exit(1)
+    except ScanExecutionError as e:
+        console.print(f"[red]Scan Error:[/red] {e.message}")
+        console.print(f"Phase: {e.phase}, Resources processed: {e.resource_count}")
+        raise typer.Exit(1)
+    except ExportExecutionError as e:
+        console.print(f"[red]Export Error:[/red] {e.message}")
+        console.print(f"Format: {e.format_type}")
+        if e.output_path:
+            console.print(f"Path: {e.output_path}")
+        raise typer.Exit(1)
     except Exception as e:
-        console.print(f"[red]Error:[/red] {str(e)}")
+        console.print(f"[red]Unexpected Error:[/red] {str(e)}")
+        logger.exception("Unexpected error during scan")
         raise typer.Exit(1)
 
 
@@ -302,7 +374,7 @@ def report(
     hide_system: bool = typer.Option(
         False, "--hide-system", help="Hide system/managed namespaces (kube-*, eks-*, etc.)"
     ),
-):
+) -> None:
     """Generate a comprehensive cluster report."""
     try:
         with console.status("[bold green]Generating cluster report..."):
@@ -351,7 +423,7 @@ def report(
 def upgrade_path(
     current: str = typer.Argument(..., help="Current Kubernetes version (e.g., v1.25.0)"),
     target: Optional[str] = typer.Argument(None, help="Target version (default: next minor)"),
-):
+) -> None:
     """Show upgrade path and recommendations between versions."""
     try:
         from ..upgrade import UpgradeAdvisor
@@ -404,7 +476,7 @@ def iac_drift(
     hide_system: bool = typer.Option(
         False, "--hide-system", help="Hide EKS/K8s system resources from analysis"
     ),
-):
+) -> None:
     """Analyze drift between Infrastructure as Code and running cluster."""
     try:
         from .drift import DriftAnalyzer
@@ -424,7 +496,7 @@ def history(
         None, "--context", "-c", help="Filter by cluster context"
     ),
     namespace: Optional[str] = typer.Option(None, "--namespace", "-n", help="Filter by namespace"),
-):
+) -> None:
     """Show scan history."""
     try:
         # Use ScanService to get history
@@ -492,7 +564,7 @@ def history(
 def changes(
     days: int = typer.Option(7, "--days", "-d", help="Number of days to look back for changes"),
     limit: int = typer.Option(50, "--limit", "-l", help="Maximum number of changes to show"),
-):
+) -> None:
     """Show recent resource changes."""
     try:
         history_service = HistoryService()
@@ -524,7 +596,7 @@ def resource_history(
         None, "--namespace", "-n", help="Resource namespace (omit for cluster-scoped resources)"
     ),
     limit: int = typer.Option(10, "--limit", "-l", help="Number of historical versions to show"),
-):
+) -> None:
     """Show history of a specific resource."""
     try:
         history_service = HistoryService()
@@ -552,7 +624,7 @@ def resource_history(
 @app.command()
 def summary(
     days: int = typer.Option(30, "--days", "-d", help="Number of days to summarize"),
-):
+) -> None:
     """Show historical summary and statistics."""
     try:
         history_service = HistoryService()
@@ -586,7 +658,7 @@ def cleanup(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be deleted without actually deleting"
     ),
-):
+) -> None:
     """Clean up old scan data."""
     try:
         history_service = HistoryService()
@@ -609,7 +681,7 @@ def cleanup(
 
 
 @app.command()
-def db_info():
+def db_info() -> None:
     """Show database information and statistics."""
     try:
         # Use default SQLite database
@@ -652,7 +724,7 @@ def drift(
     baseline_scan: Optional[int] = typer.Option(
         None, "--baseline", "-b", help="Baseline scan ID (default: oldest in period)"
     ),
-):
+) -> None:
     """Analyze configuration drift in a cluster."""
     try:
         analysis_service = AnalysisService()
@@ -731,7 +803,7 @@ def drift(
 def compare(
     scan1: int = typer.Argument(help="First scan ID"),
     scan2: int = typer.Argument(help="Second scan ID"),
-):
+) -> None:
     """Compare two scans and show differences."""
     try:
         analysis_service = AnalysisService()
@@ -814,7 +886,7 @@ def compare(
 def health(
     context: str = typer.Argument(help="Cluster context to analyze"),
     days: int = typer.Option(7, "--days", "-d", help="Number of days to analyze"),
-):
+) -> None:
     """Generate a cluster health report."""
     try:
         analysis_service = AnalysisService()
@@ -880,7 +952,7 @@ def inventory(
     group_by: str = typer.Option(
         "management", "--group-by", "-g", help="Group by: management, namespace, kind"
     ),
-):
+) -> None:
     """Show cluster inventory - what's installed, versions, and management."""
     try:
         with console.status("[bold green]Collecting cluster inventory..."):
@@ -892,7 +964,7 @@ def inventory(
             inventory = collector.collect()
             
         # Helper function to prepare inventory data
-        def prepare_inventory_data():
+        def prepare_inventory_data() -> Dict[str, Any]:
             return {
                 "cluster": inventory.cluster_name,
                 "kubernetes_version": inventory.kubernetes_version,
@@ -914,15 +986,15 @@ def inventory(
             }
         
         # Output format handlers
-        def output_json():
+        def output_json() -> None:
             import json
             console.print(json.dumps(prepare_inventory_data(), indent=2))
         
-        def output_yaml():
+        def output_yaml() -> None:
             import yaml
             console.print(yaml.dump(prepare_inventory_data(), default_flow_style=False))
         
-        def output_table():
+        def output_table() -> None:
             # Print header
             console.print("\n[bold]CLUSTER INVENTORY[/bold]")
             console.print("=" * 80)
@@ -999,9 +1071,12 @@ def inventory(
         raise typer.Exit(1)
 
 
-def _print_applications_table(apps: List):
-    """Helper to print applications in a table."""
-    from collections import defaultdict
+def _print_applications_table(apps: List[Any]) -> None:
+    """Helper to print applications in a table.
+    
+    Args:
+        apps: List of application objects to display in table format
+    """
     
     table = Table(show_header=True, header_style="bold")
     table.add_column("Name", style="green")
@@ -1046,7 +1121,7 @@ def overview(
     output: Optional[Path] = typer.Option(
         None, "--output", "-o", help="Save output to file"
     ),
-):
+) -> None:
     """Show cluster overview with version, namespaces, and pod counts."""
     try:
         with console.status("[bold green]Collecting cluster overview..."):
@@ -1082,7 +1157,7 @@ def overview(
 
 
 @app.command()
-def version():
+def version() -> None:
     """Show version information."""
     console.print("[bold]k8s-scanner[/bold] version 0.3.0")
     console.print("A Kubernetes resource extraction and analysis tool with historical tracking")

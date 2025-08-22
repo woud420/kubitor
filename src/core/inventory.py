@@ -93,7 +93,8 @@ class InventoryCollector:
                 
                 for label_key, extractor in cluster_name_labels.items():
                     if label_key in labels:
-                        return extractor(labels)
+                        result = extractor(labels)
+                        return str(result) if result is not None else "unknown"
         except Exception as e:
             logger.debug(f"Could not get cluster name from nodes: {e}")
         
@@ -104,7 +105,8 @@ class InventoryCollector:
         try:
             version_info = self.client.get_version()
             if version_info and "serverVersion" in version_info:
-                return version_info["serverVersion"]["gitVersion"]
+                git_version = version_info["serverVersion"]["gitVersion"]
+                return str(git_version) if git_version is not None else "unknown"
         except Exception as e:
             logger.error(f"Could not get Kubernetes version: {e}")
         
@@ -176,7 +178,8 @@ class InventoryCollector:
         try:
             result = self.client.get_json(resource_type, all_namespaces=all_namespaces)
             if result and "items" in result:
-                return result["items"]
+                items = result["items"]
+                return list(items) if isinstance(items, list) else []
         except Exception as e:
             logger.debug(f"Could not get {resource_type}: {e}")
         

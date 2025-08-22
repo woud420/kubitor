@@ -2,7 +2,8 @@
 
 import subprocess
 import json
-from typing import List, Tuple, Optional
+import logging
+from typing import List, Tuple, Optional, Dict, Any
 
 from ..model.report import HelmRelease, HelmRepository
 from ..utils.logger import get_logger
@@ -13,8 +14,8 @@ logger = get_logger(__name__)
 class HelmClient:
     """Client for Helm operations."""
 
-    def __init__(self):
-        self.helm_available = self._check_helm()
+    def __init__(self) -> None:
+        self.helm_available: bool = self._check_helm()
 
     def _check_helm(self) -> bool:
         """Check if Helm is available."""
@@ -29,13 +30,37 @@ class HelmClient:
         """Execute Helm command."""
         if not self.helm_available:
             return False, "Helm not available"
+        
+        if not isinstance(args, list):
+            logger.error(f"Expected list for args, got {type(args).__name__}")
+            return False, "Invalid arguments"
+        
+        # Validate args are all strings
+        for arg in args:
+            if not isinstance(arg, str):
+                logger.error(f"All arguments must be strings, got {type(arg).__name__}")
+                return False, "Invalid argument type"
 
         cmd = ["helm"] + args
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True, 
+                check=True,
+                timeout=30  # Add timeout for safety
+            )
             return True, result.stdout
         except subprocess.CalledProcessError as e:
-            return False, e.stderr
+            error_msg = e.stderr if e.stderr else str(e)
+            logger.debug(f"Helm command failed: {' '.join(cmd)}, error: {error_msg}")
+            return False, error_msg
+        except subprocess.TimeoutExpired:
+            logger.error(f"Helm command timed out: {' '.join(cmd)}")
+            return False, "Command timed out"
+        except Exception as e:
+            logger.error(f"Unexpected error executing helm command: {e}")
+            return False, f"Unexpected error: {e}"
 
     def get_releases(self) -> List[HelmRelease]:
         """Get all Helm releases."""
@@ -46,22 +71,37 @@ class HelmClient:
 
         try:
             data = json.loads(output)
-            releases = []
+            if not isinstance(data, list):
+                logger.error(f"Expected list from helm list, got {type(data).__name__}")
+                return []
+                
+            releases: List[HelmRelease] = []
 
             for item in data:
-                release = HelmRelease(
-                    name=item.get("name", ""),
-                    namespace=item.get("namespace", "default"),
-                    revision=str(item.get("revision", "1")),
-                    status=item.get("status", "unknown"),
-                    chart=item.get("chart", ""),
-                    app_version=item.get("app_version"),
-                )
-                releases.append(release)
+                if not isinstance(item, dict):
+                    logger.warning(f"Skipping non-dict item in helm releases: {type(item).__name__}")
+                    continue
+                    
+                try:
+                    release = HelmRelease(
+                        name=item.get("name", ""),
+                        namespace=item.get("namespace", "default"),
+                        revision=str(item.get("revision", "1")),
+                        status=item.get("status", "unknown"),
+                        chart=item.get("chart", ""),
+                        app_version=item.get("app_version"),
+                    )
+                    releases.append(release)
+                except Exception as e:
+                    logger.warning(f"Failed to parse helm release item: {e}")
+                    continue
 
             return releases
-        except json.JSONDecodeError:
-            logger.error("Failed to parse Helm releases")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Helm releases JSON: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error parsing helm releases: {e}")
             return []
 
     def get_repositories(self) -> List[HelmRepository]:
@@ -73,13 +113,31 @@ class HelmClient:
 
         try:
             data = json.loads(output)
-            repos = []
+            if not isinstance(data, list):
+                logger.error(f"Expected list from helm repo list, got {type(data).__name__}")
+                return []
+                
+            repos: List[HelmRepository] = []
 
             for item in data:
-                repo = HelmRepository(name=item.get("name", ""), url=item.get("url", ""))
-                repos.append(repo)
+                if not isinstance(item, dict):
+                    logger.warning(f"Skipping non-dict item in helm repositories: {type(item).__name__}")
+                    continue
+                    
+                try:
+                    repo = HelmRepository(
+                        name=item.get("name", ""), 
+                        url=item.get("url", "")
+                    )
+                    repos.append(repo)
+                except Exception as e:
+                    logger.warning(f"Failed to parse helm repository item: {e}")
+                    continue
 
             return repos
-        except json.JSONDecodeError:
-            logger.error("Failed to parse Helm repositories")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Helm repositories JSON: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error parsing helm repositories: {e}")
             return []

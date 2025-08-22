@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from ..k8s import K8sClient
+from ..model.cluster import NodeInfo
 from ..model.overview import (
     ClusterOverviewData,
     CronJobOverview,
@@ -43,7 +44,7 @@ class ClusterOverview:
                 else "Unknown"
             ),
             platform=(
-                cluster_info.server_version.platform
+                cluster_info.server_version.platform or "Unknown"
                 if cluster_info.server_version
                 else "Unknown"
             ),
@@ -63,7 +64,7 @@ class ClusterOverview:
 
         return overview
 
-    def _node_to_dict(self, node) -> Dict[str, Any]:
+    def _node_to_dict(self, node: NodeInfo) -> Dict[str, Any]:
         """Convert node info to dictionary."""
         return {
             "name": node.name,
@@ -323,43 +324,43 @@ class ClusterOverview:
 
         if overview.workloads.statefulsets:
             lines.append(f"\nStatefulSets ({len(overview.workloads.statefulsets)}):")
-            for item in overview.workloads.statefulsets[:5]:
-                health = "✓" if item.is_healthy else "✗"
+            for statefulset in overview.workloads.statefulsets[:5]:
+                health = "✓" if statefulset.is_healthy else "✗"
                 lines.append(
-                    f"  {health} {item.namespace}/{item.name}: "
-                    f"{item.ready_replicas}/{item.replicas} ready"
+                    f"  {health} {statefulset.namespace}/{statefulset.name}: "
+                    f"{statefulset.ready_replicas}/{statefulset.replicas} ready"
                 )
 
         if overview.workloads.daemonsets:
             lines.append(f"\nDaemonSets ({len(overview.workloads.daemonsets)}):")
-            for item in overview.workloads.daemonsets[:5]:
-                health = "✓" if item.is_healthy else "✗"
+            for daemonset in overview.workloads.daemonsets[:5]:
+                health = "✓" if daemonset.is_healthy else "✗"
                 lines.append(
-                    f"  {health} {item.namespace}/{item.name}: "
-                    f"{item.ready}/{item.desired} ready"
+                    f"  {health} {daemonset.namespace}/{daemonset.name}: "
+                    f"{daemonset.ready}/{daemonset.desired} ready"
                 )
 
         if overview.workloads.jobs:
             lines.append(f"\nJobs ({len(overview.workloads.jobs)}):")
-            for item in overview.workloads.jobs[:5]:
-                complete = "✓" if item.is_complete else "⟳"
+            for job in overview.workloads.jobs[:5]:
+                complete = "✓" if job.is_complete else "⟳"
                 lines.append(
-                    f"  {complete} {item.namespace}/{item.name}: "
-                    f"{item.succeeded}/{item.completions} completed"
+                    f"  {complete} {job.namespace}/{job.name}: "
+                    f"{job.succeeded}/{job.completions} completed"
                 )
 
         if overview.workloads.cronjobs:
             lines.append(f"\nCronJobs ({len(overview.workloads.cronjobs)}):")
-            for item in overview.workloads.cronjobs[:5]:
-                status = "paused" if item.suspend else "active"
-                lines.append(f"  • {item.namespace}/{item.name}: {item.schedule} ({status})")
+            for cronjob in overview.workloads.cronjobs[:5]:
+                status = "paused" if cronjob.suspend else "active"
+                lines.append(f"  • {cronjob.namespace}/{cronjob.name}: {cronjob.schedule} ({status})")
 
         # Check for unhealthy workloads
         unhealthy = overview.workloads.get_unhealthy_workloads()
         if unhealthy:
             lines.append(f"\n⚠️  Unhealthy Workloads ({len(unhealthy)}):")
-            for item in unhealthy[:5]:
-                lines.append(f"  • {item.kind}: {item.namespace}/{item.name}")
+            for workload in unhealthy[:5]:
+                lines.append(f"  • {workload.kind}: {workload.namespace}/{workload.name}")
 
         # Resource Summary
         lines.append("\n📦 RESOURCE SUMMARY")

@@ -111,7 +111,12 @@ class ResourceDAO:
                 annotations,
             ]
 
-        return self.db.insert_returning_id(query, params)
+        # Use the proper interface for the database connection
+        columns = ["scan_id", "api_version", "kind", "namespace", "name", "resource_data", "resource_hash", "is_helm_managed", "helm_release", "labels", "annotations"]
+        result = self._base_dao.insert_returning_id(columns, params)
+        if result is None:
+            raise ValueError("Failed to create resource record")
+        return result
 
     def bulk_create_resources(self, resources_data: List[Dict[str, Any]]) -> int:
         """Bulk create resource records."""
@@ -208,7 +213,7 @@ class ResourceDAO:
                 JOIN scan_records s ON r.scan_id = s.id
                 WHERE r.kind = ? AND r.name = ?
             """
-            params = [kind, name]
+            params: List[Any] = [kind, name]
 
             if namespace is not None:
                 query += " AND r.namespace = ?"
@@ -217,7 +222,7 @@ class ResourceDAO:
                 query += " AND r.namespace IS NULL"
 
             query += " ORDER BY s.timestamp DESC LIMIT ?"
-            params.append(limit)
+            params.append(str(limit))
         else:  # postgresql
             query = """
                 SELECT r.*, s.timestamp 
@@ -234,7 +239,7 @@ class ResourceDAO:
                 query += " AND r.namespace IS NULL"
 
             query += " ORDER BY s.timestamp DESC LIMIT %s"
-            params.append(limit)
+            params.append(str(limit))
 
         return self.db.fetch_all(query, params)
 
@@ -243,11 +248,11 @@ class ResourceDAO:
     ) -> List[Dict[str, Any]]:
         """Find resources by type, optionally filtered by scan and namespace."""
         where_clause = "kind = ?"
-        params = [kind]
+        params: List[Any] = [kind]
 
         if scan_id:
             where_clause += " AND scan_id = ?"
-            params.append(scan_id)
+            params.append(str(scan_id))
 
         if namespace is not None:
             where_clause += " AND namespace = ?"
@@ -407,7 +412,7 @@ class ResourceDAO:
 
             if scan_id:
                 query += " AND scan_id = ?"
-                params.append(scan_id)
+                params.append(str(scan_id))
         else:  # postgresql
             if annotation_value is None:
                 # Check if annotation key exists
@@ -426,7 +431,7 @@ class ResourceDAO:
 
             if scan_id:
                 query += " AND scan_id = %s"
-                params.append(scan_id)
+                params.append(str(scan_id))
 
         return self.db.fetch_all(query, params)
 
@@ -466,3 +471,20 @@ class ResourceDAO:
         deleted_count = self._base_dao.delete_where(where_clause, scan_ids)
         logger.info(f"Cleaned up {deleted_count} resource records")
         return deleted_count
+
+    def find_by_scan_id(self, scan_id: int) -> List[Dict[str, Any]]:
+        """Find all resources for a given scan ID."""
+        return self.get_resources_by_scan(scan_id)
+
+    def find_resource_history(
+        self,
+        api_version: str,
+        kind: str,
+        name: str,
+        namespace: Optional[str] = None,
+        since: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """Find resource history - enhanced version of get_resource_history."""
+        # For now, just use the basic method without since parameter
+        # The since parameter could be implemented with additional WHERE clause
+        return self.get_resource_history(kind, name, namespace, 50)  # Increased limit for history

@@ -174,7 +174,7 @@ class AnalysisService:
 
             # Get recent scans for additional context
             recent_scans = self.scan_repo.get_recent_scans(
-                cluster_context=cluster_context, namespace=namespace, days=30, limit=10
+                limit=10, cluster_context=cluster_context
             )
 
             statistics = {
@@ -197,7 +197,7 @@ class AnalysisService:
         try:
             # Get recent scans
             recent_scans = self.scan_repo.get_recent_scans(
-                cluster_context=cluster_context, days=days, limit=50
+                limit=50, cluster_context=cluster_context
             )
 
             if not recent_scans:
@@ -313,7 +313,7 @@ class AnalysisService:
 
         return recommendations
 
-    def close(self):
+    def close(self) -> None:
         """Close database connection."""
         if self.db_connection:
             self.db_connection.close()

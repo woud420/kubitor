@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from src.k8s.client import K8sClient
+from src.core.exceptions import KubernetesConnectionError, KubernetesCommandError
 
 
 class TestK8sClient:
@@ -22,7 +23,7 @@ class TestK8sClient:
         """Test kubectl verification failure."""
         mock_run.side_effect = FileNotFoundError()
 
-        with pytest.raises(RuntimeError, match="kubectl command not found"):
+        with pytest.raises(KubernetesConnectionError, match="kubectl command not found"):
             K8sClient()
 
     @patch("subprocess.run")
@@ -72,7 +73,5 @@ class TestK8sClient:
         ]
 
         client = K8sClient()
-        success, output = client.execute(["get", "pods"])
-
-        assert success is False
-        assert "Error message" in output
+        with pytest.raises(KubernetesCommandError, match="kubectl command failed"):
+            client.execute(["get", "pods"])

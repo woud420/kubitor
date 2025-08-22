@@ -15,17 +15,17 @@ class Exporter(ABC):
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     @abstractmethod
-    def export(self, resources: List[K8sResource], group_name: str):
+    def export(self, resources: List[K8sResource], group_name: str) -> None:
         """Export resources to files."""
         pass
 
     def clean_resource(self, resource: K8sResource) -> Dict[str, Any]:
         """Clean resource for export."""
         # Convert to dict
-        data = {
+        data: Dict[str, Any] = {
             "apiVersion": resource.api_version,
             "kind": resource.kind,
-            "metadata": resource.metadata.copy(),
+            "metadata": dict(resource.metadata),
         }
 
         if resource.spec:
@@ -35,7 +35,7 @@ class Exporter(ABC):
             data["data"] = resource.data
 
         # Remove runtime fields from metadata
-        metadata = data["metadata"]
+        metadata: Dict[str, Any] = data["metadata"]
         fields_to_remove = [
             "managedFields",
             "resourceVersion",

@@ -12,7 +12,7 @@ from .versions import KUBERNETES_VERSIONS
 class UpgradeAdvisor:
     """Provides upgrade path suggestions for Kubernetes clusters."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.versions = KUBERNETES_VERSIONS
         self.deprecated_apis = {
             ("extensions/v1beta1", "Ingress"): "networking.k8s.io/v1",

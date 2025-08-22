@@ -19,7 +19,7 @@ class ManagementTool(Enum):
 class ManagementInfo:
     """Information about how a resource is managed."""
     
-    def __init__(self, tool: ManagementTool, details: Dict[str, Any] = None):
+    def __init__(self, tool: ManagementTool, details: Optional[Dict[str, Any]] = None):
         self.tool = tool
         self.details = details or {}
         

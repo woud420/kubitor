@@ -59,7 +59,7 @@ class HistoricalAnalyzer:
 
         return "\n".join(lines)
 
-    def print_scan_history_table(self, scans: List[ScanRecordResponse]):
+    def print_scan_history_table(self, scans: List[ScanRecordResponse]) -> None:
         """Print scan history as a formatted table."""
         if not scans:
             console.print("[yellow]No scan history found[/yellow]")
@@ -85,7 +85,7 @@ class HistoricalAnalyzer:
 
         console.print(table)
 
-    def print_changes_table(self, changes: List[ResourceChangeResponse]):
+    def print_changes_table(self, changes: List[ResourceChangeResponse]) -> None:
         """Print changes as a formatted table."""
         if not changes:
             console.print("[yellow]No changes found[/yellow]")
@@ -118,7 +118,7 @@ class HistoricalAnalyzer:
 
         console.print(table)
 
-    def print_historical_summary(self, summary: HistoricalSummary):
+    def print_historical_summary(self, summary: HistoricalSummary) -> None:
         """Print historical summary."""
         console.print(
             f"\n[bold]Historical Summary ({summary.date_range[0]} to {summary.date_range[1]})[/bold]"
@@ -158,7 +158,7 @@ class HistoricalAnalyzer:
 
     def _group_changes_by_namespace(self, changes: List[ResourceChangeResponse]) -> Dict[str, int]:
         """Group changes by namespace."""
-        by_namespace = {}
+        by_namespace: Dict[str, int] = {}
         for change in changes:
             ns = change.namespace or "cluster-scoped"
             by_namespace[ns] = by_namespace.get(ns, 0) + 1
@@ -166,7 +166,7 @@ class HistoricalAnalyzer:
 
     def _get_most_active_resources(self, changes: List[ResourceChangeResponse]) -> Dict[str, int]:
         """Get most frequently changed resources."""
-        by_resource = {}
+        by_resource: Dict[str, int] = {}
         for change in changes:
             resource_key = f"{change.kind}/{change.name}"
             by_resource[resource_key] = by_resource.get(resource_key, 0) + 1

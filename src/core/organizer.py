@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Callable, Optional, Set
 
 from ..model.kubernetes import K8sResource
 from ..model.export import OrganizeBy, ExportFormat
@@ -21,7 +21,16 @@ class ResourceOrganizer:
         organize_by: OrganizeBy,
         export_format: ExportFormat,
         annotation_key: Optional[str] = None,
-    ):
+    ) -> None:
+        if not isinstance(output_dir, str) or not output_dir.strip():
+            raise ValueError("Output directory must be a non-empty string")
+        if not isinstance(organize_by, OrganizeBy):
+            raise TypeError(f"organize_by must be OrganizeBy enum, got {type(organize_by).__name__}")
+        if not isinstance(export_format, ExportFormat):
+            raise TypeError(f"export_format must be ExportFormat enum, got {type(export_format).__name__}")
+        if annotation_key is not None and not isinstance(annotation_key, str):
+            raise TypeError(f"annotation_key must be str or None, got {type(annotation_key).__name__}")
+            
         self.output_dir = Path(output_dir)
         self.organize_by = organize_by
         self.export_format = export_format
@@ -39,19 +48,37 @@ class ResourceOrganizer:
         )
         self.exporter = exporter_factory()
 
-    def organize_and_save(self, resources: List[K8sResource]):
+    def organize_and_save(self, resources: List[K8sResource]) -> None:
         """Organize resources and save to files."""
-        logger.info(f"Organizing {len(resources)} resources by {self.organize_by}")
+        if not isinstance(resources, list):
+            raise TypeError(f"resources must be a list, got {type(resources).__name__}")
+        
+        # Filter out any invalid resources
+        valid_resources = []
+        for resource in resources:
+            if isinstance(resource, K8sResource):
+                valid_resources.append(resource)
+            else:
+                logger.warning(f"Skipping invalid resource of type {type(resource).__name__}")
+        
+        if not valid_resources:
+            logger.warning("No valid resources to organize")
+            return
+            
+        logger.info(f"Organizing {len(valid_resources)} resources by {self.organize_by}")
 
         # Organize resources
-        organized = self._organize_resources(resources)
+        organized = self._organize_resources(valid_resources)
 
         # Export each group
         for group_name, group_resources in organized.items():
-            self.exporter.export(group_resources, group_name)
+            try:
+                self.exporter.export(group_resources, group_name)
+            except Exception as e:
+                logger.error(f"Failed to export group '{group_name}': {e}")
 
         # Create summary
-        self._create_summary(resources, organized)
+        self._create_summary(valid_resources, organized)
 
     def _organize_resources(self, resources: List[K8sResource]) -> Dict[str, List[K8sResource]]:
         """Organize resources based on strategy using enum + dictionary pattern."""
@@ -110,7 +137,7 @@ class ResourceOrganizer:
             logger.info(f"Using specified annotation key for organization: {organizing_key}")
         else:
             # Find annotation keys that vary across resources
-            all_annotation_keys = set()
+            all_annotation_keys: Set[str] = set()
             for resource in resources:
                 all_annotation_keys.update(resource.annotations.keys())
 
@@ -188,7 +215,7 @@ class ResourceOrganizer:
 
     def _create_summary(
         self, resources: List[K8sResource], organized: Dict[str, List[K8sResource]]
-    ):
+    ) -> None:
         """Create summary file."""
         summary_path = self.output_dir / "scan-summary.txt"
 
@@ -203,7 +230,7 @@ class ResourceOrganizer:
             f.write("Resources by group:\n")
             for group_name, group_resources in sorted(organized.items()):
                 f.write(f"\n{group_name}:\n")
-                by_kind = defaultdict(int)
+                by_kind: Dict[str, int] = defaultdict(int)
                 for r in group_resources:
                     by_kind[r.kind] += 1
                 for kind, count in sorted(by_kind.items()):

@@ -192,7 +192,7 @@ class DriftAnalyzer:
             k: self._clean_resource_for_comparison(v) for k, v in cluster_resources.items()
         }
 
-        drift_analysis = {
+        drift_analysis: Dict[str, List[Any]] = {
             "only_in_iac": [],
             "only_in_cluster": [],
             "configuration_drift": [],
@@ -236,7 +236,7 @@ class DriftAnalyzer:
         """Find specific differences between two resources."""
         differences = []
 
-        def compare_dicts(d1, d2, current_path):
+        def compare_dicts(d1: Any, d2: Any, current_path: str) -> None:
             all_keys = set(d1.keys()) | set(d2.keys())
 
             for key in all_keys:
@@ -255,7 +255,7 @@ class DriftAnalyzer:
         compare_dicts(iac, cluster, path)
         return differences
 
-    def print_drift_report(self):
+    def print_drift_report(self) -> None:
         """Print a comprehensive drift report."""
         drift = self.analyze_drift()
 
@@ -307,7 +307,7 @@ class DriftAnalyzer:
             cluster_tree = Tree("Cluster-Only Resources")
 
             # Group by category
-            by_category = {}
+            by_category: Dict[str, List[str]] = {}
             for item in drift["only_in_cluster"]:
                 kind = item["resource"].get("kind", "Unknown")
                 namespace = item["resource"].get("metadata", {}).get("namespace", "cluster-scoped")
@@ -359,7 +359,7 @@ def analyze_drift(
     hide_system: bool = typer.Option(
         False, "--hide-system", help="Hide EKS/K8s system resources from analysis"
     ),
-):
+) -> None:
     """Analyze drift between Infrastructure as Code and running cluster."""
 
     analyzer = DriftAnalyzer(iac_path, cluster_path, hide_system=hide_system)

@@ -14,13 +14,13 @@ logger = get_logger(__name__)
 class YamlExporter(Exporter):
     """Export resources as YAML files."""
 
-    def export(self, resources: List[K8sResource], group_name: str):
+    def export(self, resources: List[K8sResource], group_name: str) -> None:
         """Export resources to YAML files."""
         if not resources:
             return
 
         # Group by kind
-        by_kind = {}
+        by_kind: dict[str, list[K8sResource]] = {}
         for resource in resources:
             kind = resource.kind.lower()
             if kind not in by_kind:

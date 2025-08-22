@@ -96,10 +96,13 @@ class ScanDAO:
                 total_resources,
                 cluster_version,
                 node_count,
-                cluster_info,  # PostgreSQL handles JSON natively
+                json.dumps(cluster_info) if cluster_info else None,  # Convert to string for consistency
             ]
 
-        return self._base_dao.insert_returning_id(columns, values)
+        result = self._base_dao.insert_returning_id(columns, values)
+        if result is None:
+            raise ValueError("Failed to create scan record")
+        return result
 
     def find_by_id(self, scan_id: int) -> Optional[Dict[str, Any]]:
         """Find scan by ID."""
@@ -127,13 +130,13 @@ class ScanDAO:
         """Get scans within a date range."""
         if self.db.dialect == "sqlite":
             where_clause = "timestamp >= ? AND timestamp <= ?"
-            params = [start_date, end_date]
+            params: List[Any] = [start_date.isoformat(), end_date.isoformat()]
             if context:
                 where_clause += " AND cluster_context = ?"
                 params.append(context)
         else:  # postgresql
             where_clause = "timestamp >= %s AND timestamp <= %s"
-            params = [start_date, end_date]
+            params = [start_date.isoformat(), end_date.isoformat()]
             if context:
                 where_clause += " AND cluster_context = %s"
                 params.append(context)
@@ -151,13 +154,13 @@ class ScanDAO:
         """Get the most recent scan before a given timestamp."""
         if self.db.dialect == "sqlite":
             where_clause = "timestamp < ?"
-            params = [timestamp]
+            params: List[Any] = [timestamp.isoformat()]
             if context:
                 where_clause += " AND cluster_context = ?"
                 params.append(context)
         else:  # postgresql
             where_clause = "timestamp < %s"
-            params = [timestamp]
+            params = [timestamp.isoformat()]
             if context:
                 where_clause += " AND cluster_context = %s"
                 params.append(context)
@@ -171,7 +174,7 @@ class ScanDAO:
 
         # Total scans
         where_clause = "timestamp >= ?"
-        params = [cutoff_date]
+        params = [cutoff_date.isoformat()]
         if self.db.dialect == "postgresql":
             where_clause = "timestamp >= %s"
 
@@ -189,7 +192,7 @@ class ScanDAO:
                 FROM scan_records WHERE timestamp >= %s
             """
 
-        date_result = self.db.fetch_one(date_query, [cutoff_date])
+        date_result = self.db.fetch_one(date_query, [cutoff_date.isoformat()])
         date_range = (
             date_result["min_date"]
             if date_result and date_result["min_date"]
@@ -217,7 +220,7 @@ class ScanDAO:
                 ORDER BY count DESC
             """
 
-        context_results = self.db.fetch_all(context_query, [cutoff_date])
+        context_results = self.db.fetch_all(context_query, [cutoff_date.isoformat()])
         scans_by_context = {
             (row["cluster_context"] or "default"): row["count"] for row in context_results
         }
@@ -238,7 +241,7 @@ class ScanDAO:
                 GROUP BY cluster_version
             """
 
-        version_results = self.db.fetch_all(version_query, [cutoff_date])
+        version_results = self.db.fetch_all(version_query, [cutoff_date.isoformat()])
         cluster_versions = {
             (row["cluster_version"] or "unknown"): row["count"] for row in version_results
         }
@@ -255,10 +258,42 @@ class ScanDAO:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=keep_days)
 
         where_clause = "timestamp < ?"
-        params = [cutoff_date]
+        params = [cutoff_date.isoformat()]
         if self.db.dialect == "postgresql":
             where_clause = "timestamp < %s"
 
         deleted_count = self._base_dao.delete_where(where_clause, params)
         logger.info(f"Cleaned up {deleted_count} old scan records")
         return deleted_count
+
+    def find_by_cluster_context(
+        self, cluster_context: str, since: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """Find scans by cluster context, optionally since a date."""
+        if since:
+            if self.db.dialect == "sqlite":
+                where_clause = "cluster_context = ? AND timestamp >= ?"
+                params = [cluster_context, since.isoformat()]
+            else:
+                where_clause = "cluster_context = %s AND timestamp >= %s"
+                params = [cluster_context, since.isoformat()]
+        else:
+            if self.db.dialect == "sqlite":
+                where_clause = "cluster_context = ?"
+                params = [cluster_context]
+            else:
+                where_clause = "cluster_context = %s"
+                params = [cluster_context]
+        
+        return self._base_dao.find_where(where_clause, params, "timestamp DESC")
+
+    def find_all_since(self, since: datetime) -> List[Dict[str, Any]]:
+        """Find all scans since a given date."""
+        if self.db.dialect == "sqlite":
+            where_clause = "timestamp >= ?"
+            params = [since.isoformat()]
+        else:
+            where_clause = "timestamp >= %s"
+            params = [since.isoformat()]
+            
+        return self._base_dao.find_where(where_clause, params, "timestamp DESC")

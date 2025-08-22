@@ -129,7 +129,7 @@ class WorkloadSummary(BaseModel):
 
     def get_unhealthy_workloads(self) -> List[WorkloadItem]:
         """Get list of unhealthy workloads."""
-        unhealthy = []
+        unhealthy: List[WorkloadItem] = []
 
         for deployment in self.deployments:
             if not deployment.is_healthy:

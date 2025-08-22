@@ -151,7 +151,7 @@ class ScanService:
 
         return scan
 
-    def cleanup_old_scans(self, keep_days: int = 90) -> Dict[str, int]:
+    def cleanup_old_scans(self, keep_days: int = 90) -> Dict[str, Any]:
         """Clean up old scan data."""
         logger.info(f"Cleaning up scans older than {keep_days} days")
 
@@ -221,7 +221,7 @@ class ScanService:
         previous_resources = self.resource_repo.get_resources_by_scan(previous_scan_id)
 
         # Create lookup maps
-        def make_resource_key(resource):
+        def make_resource_key(resource: Dict[str, Any]) -> str:
             return f"{resource['api_version']}/{resource['kind']}/{resource.get('namespace', '')}/{resource['name']}"
 
         current_map = {make_resource_key(r): r for r in current_resources}
@@ -311,7 +311,7 @@ class ScanService:
         resource_json = json.dumps(filtered_data, sort_keys=True)
         return hashlib.sha256(resource_json.encode()).hexdigest()
 
-    def close(self):
+    def close(self) -> None:
         """Close database connection."""
         if self.db_connection:
             self.db_connection.close()

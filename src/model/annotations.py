@@ -183,7 +183,7 @@ class AnnotationRule:
     filters: List[AnnotationFilter]
     logic: FilterLogic = FilterLogic.AND
     action: Optional[str] = None  # e.g., "require", "warn", "exclude"
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     def matches(self, annotations: Dict[str, str]) -> bool:
         """Check if annotations match this rule."""
@@ -211,7 +211,7 @@ class AnnotationConfig:
         if config_path and config_path.exists():
             self.load_config(config_path)
 
-    def load_config(self, config_path: Path):
+    def load_config(self, config_path: Path) -> None:
         """Load configuration from file."""
         try:
             with open(config_path, "r") as f:
@@ -225,7 +225,7 @@ class AnnotationConfig:
         except Exception as e:
             logger.error(f"Failed to load annotation config: {e}")
 
-    def _parse_config(self, config: Dict[str, Any]):
+    def _parse_config(self, config: Dict[str, Any]) -> None:
         """Parse configuration dictionary."""
         # Required annotations
         self.required_annotations = config.get("required_annotations", [])
@@ -335,7 +335,7 @@ def parse_annotation_filters(filter_strings: List[str]) -> List[AnnotationFilter
             logger.warning(f"Unknown operator: {operator_str}")
             continue
 
-        value = None
+        value: Optional[Any] = None
         if len(parts) > 2:
             value = parts[2]
             # Handle list values for IN/NOT_IN operators
